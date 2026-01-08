@@ -1,0 +1,13 @@
+# Example macro file for running the simulation
+
+# Set number of events to simulate
+/run/beamOn 1000
+
+# Optional: Change electron energy (default is 1 MeV)
+# /gun/energy 5 MeV
+
+# Optional: Change electron position (default is 0, 0, -1 um)
+# /gun/position 0 0 -1 um
+
+# Optional: Change electron direction (default is 0, 0, 1)
+# /gun/direction 0 0 1

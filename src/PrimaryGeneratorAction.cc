@@ -1,0 +1,36 @@
+#include "PrimaryGeneratorAction.hh"
+#include "G4ParticleTable.hh"
+#include "G4ParticleDefinition.hh"
+#include "G4SystemOfUnits.hh"
+
+PrimaryGeneratorAction::PrimaryGeneratorAction()
+{
+    G4int n_particle = 1;
+    fParticleGun = new G4ParticleGun(n_particle);
+
+    // Set particle type to electron
+    G4ParticleTable* particleTable = G4ParticleTable::GetParticleTable();
+    G4ParticleDefinition* particle = particleTable->FindParticle("e-");
+    fParticleGun->SetParticleDefinition(particle);
+
+    // Default energy: 1 MeV
+    fParticleGun->SetParticleEnergy(1.0 * MeV);
+
+    // Default position: 1 micron above the Al2O3 layer
+    // Al2O3 layer is at z=0, thickness is 20nm, so center is at z=0
+    // Place gun at z = -1 micron (above the layer, shooting downward)
+    fParticleGun->SetParticlePosition(G4ThreeVector(0.0, 0.0, -1.0 * um));
+
+    // Default direction: along +z axis (downward toward the Al2O3 layer)
+    fParticleGun->SetParticleMomentumDirection(G4ThreeVector(0.0, 0.0, 1.0));
+}
+
+PrimaryGeneratorAction::~PrimaryGeneratorAction()
+{
+    delete fParticleGun;
+}
+
+void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
+{
+    fParticleGun->GeneratePrimaryVertex(anEvent);
+}

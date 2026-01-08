@@ -1,0 +1,28 @@
+# Visualization initialization macro
+
+# Create an OpenGL driver
+/vis/open OGL
+
+# Draw volume
+/vis/drawVolume
+
+# Specify view angle
+/vis/viewer/set/viewpointThetaPhi 90. 0.
+
+# Add smooth trajectories
+/vis/scene/add/trajectories smooth
+
+# Accumulate trajectories
+/vis/scene/endOfEventAction accumulate
+
+# Add axes
+/vis/scene/add/axes 0 0 0 100 nm
+
+# Set style
+/vis/viewer/set/style surface
+
+# Set background color
+/vis/viewer/set/background white
+
+# Refresh
+/vis/viewer/refresh
