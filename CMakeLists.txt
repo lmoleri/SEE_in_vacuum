@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 project(SEE_in_vacuum)
 
+# Check for conda environment and add to CMAKE_PREFIX_PATH
+if(DEFINED ENV{CONDA_PREFIX})
+    set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} $ENV{CONDA_PREFIX})
+    message(STATUS "Found conda environment: $ENV{CONDA_PREFIX}")
+endif()
+
 # Find Geant4 package
 find_package(Geant4 REQUIRED)
 
@@ -17,6 +23,8 @@ set(SOURCES
     src/PrimaryGeneratorAction.cc
     src/PhysicsList.cc
     src/ActionInitialization.cc
+    src/RunAction.cc
+    src/SteppingAction.cc
 )
 
 # Header files
@@ -25,6 +33,8 @@ set(HEADERS
     include/PrimaryGeneratorAction.hh
     include/PhysicsList.hh
     include/ActionInitialization.hh
+    include/RunAction.hh
+    include/SteppingAction.hh
 )
 
 # Create executable

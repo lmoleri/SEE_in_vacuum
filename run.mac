@@ -1,7 +1,9 @@
-# Example macro file for running the simulation
+# Example macro file for running the simulation (batch / no GUI)
 
-# Set number of events to simulate
-/run/beamOn 1000
+# Make output clearly show that the run is happening
+/run/verbose 1
+/event/verbose 0
+/tracking/verbose 0
 
 # Optional: Change electron energy (default is 1 MeV)
 # /gun/energy 5 MeV
@@ -11,3 +13,6 @@
 
 # Optional: Change electron direction (default is 0, 0, 1)
 # /gun/direction 0 0 1
+
+# Set number of events to simulate
+/run/beamOn 1000

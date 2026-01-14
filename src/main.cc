@@ -37,6 +37,8 @@ int main(int argc, char** argv)
     } else {
         // interactive mode : define UI session
         G4UIExecutive* ui = new G4UIExecutive(argc, argv);
+        // Allow running from build/ while keeping macros in the project root
+        UImanager->ApplyCommand("/control/macroPath ..");
         UImanager->ApplyCommand("/control/execute init_vis.mac");
         ui->SessionStart();
         delete ui;

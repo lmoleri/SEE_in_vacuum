@@ -47,8 +47,6 @@ void DetectorConstruction::DefineMaterials()
     G4cout << "\n--- Material properties ---" << G4endl;
     G4cout << "World material: " << fWorldMaterial->GetName() << G4endl;
     G4cout << "Al2O3 density: " << fAl2O3Material->GetDensity() / (g/cm3) << " g/cm³" << G4endl;
-    G4cout << "Al2O3 composition:" << G4endl;
-    fAl2O3Material->Print(G4cout);
 }
 
 G4VPhysicalVolume* DetectorConstruction::Construct()
@@ -70,13 +68,16 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
                                          fWorldMaterial, 
                                          "World");
     
-    fWorldPhysical = new G4VPhysicalVolume(0, 
-                                           G4ThreeVector(0, 0, 0), 
-                                           fWorldLogical, 
-                                           "World", 
-                                           0, 
-                                           false, 
-                                           0);
+    // World physical volume (root volume)
+    fWorldPhysical = new G4PVPlacement(
+        nullptr,                    // no rotation
+        G4ThreeVector(0, 0, 0),     // position
+        fWorldLogical,              // logical volume
+        "World",                    // name
+        nullptr,                    // no mother volume (this is the world)
+        false,                      // no boolean operations
+        0,                          // copy number
+        true);                      // check overlaps
 
     // Al2O3 layer - cylindrical disk
     // Thickness: 20 nm
@@ -95,14 +96,16 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
                                         fAl2O3Material,
                                         "Al2O3");
     
-    // Position the Al2O3 layer at the origin
-    fAl2O3Physical = new G4VPhysicalVolume(0,
-                                           G4ThreeVector(0, 0, 0),
-                                           fAl2O3Logical,
-                                           "Al2O3",
-                                           fWorldLogical,
-                                           false,
-                                           0);
+    // Position the Al2O3 layer at the origin, inside the world
+    fAl2O3Physical = new G4PVPlacement(
+        nullptr,                    // no rotation
+        G4ThreeVector(0, 0, 0),     // position
+        fAl2O3Logical,              // logical volume
+        "Al2O3",                    // name
+        fWorldLogical,              // mother volume
+        false,                      // no boolean operations
+        0,                          // copy number
+        true);                      // check overlaps
 
     G4cout << "\n--- Geometry ---" << G4endl;
     G4cout << "Al2O3 layer:" << G4endl;

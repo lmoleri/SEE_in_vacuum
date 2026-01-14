@@ -1,7 +1,7 @@
 # Visualization initialization macro
 
-# Create an OpenGL driver
-/vis/open OGL
+# Create a Qt-based driver (TSGQt is available in your build)
+/vis/open TSGQt
 
 # Draw volume
 /vis/drawVolume
