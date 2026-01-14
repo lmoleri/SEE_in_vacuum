@@ -8,7 +8,8 @@ DetectorConstruction::DetectorConstruction()
       fWorldLogical(nullptr),
       fAl2O3Logical(nullptr),
       fWorldPhysical(nullptr),
-      fAl2O3Physical(nullptr)
+      fAl2O3Physical(nullptr),
+      fAl2O3Region(nullptr)
 {
 }
 
@@ -106,6 +107,11 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
         false,                      // no boolean operations
         0,                          // copy number
         true);                      // check overlaps
+
+    // Define a dedicated region for the Al2O3 target so that we can
+    // attach the PAI model only in this thin layer.
+    fAl2O3Region = new G4Region("Al2O3Region");
+    fAl2O3Region->AddRootLogicalVolume(fAl2O3Logical);
 
     G4cout << "\n--- Geometry ---" << G4endl;
     G4cout << "Al2O3 layer:" << G4endl;

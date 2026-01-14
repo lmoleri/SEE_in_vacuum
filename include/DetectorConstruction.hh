@@ -9,6 +9,7 @@
 #include "G4Tubs.hh"
 #include "G4Material.hh"
 #include "G4NistManager.hh"
+#include "G4Region.hh"
 #include "globals.hh"
 
 class DetectorConstruction : public G4VUserDetectorConstruction
@@ -31,6 +32,9 @@ private:
     
     G4VPhysicalVolume* fWorldPhysical;
     G4VPhysicalVolume* fAl2O3Physical;
+
+    // Region used for applying the PAI model
+    G4Region* fAl2O3Region = nullptr;
 };
 
 #endif
