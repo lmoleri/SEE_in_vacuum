@@ -10,6 +10,7 @@
 #include "PrimaryGeneratorAction.hh"
 #include "PhysicsList.hh"
 #include "ActionInitialization.hh"
+#include "RunAction.hh"
 
 #include <algorithm>
 #include <cctype>
@@ -90,13 +91,15 @@ std::string FormatParam(double value)
     std::ostringstream oss;
     if (std::abs(value - std::round(value)) < 1e-6) {
         oss << std::fixed << std::setprecision(0) << value;
-    } else {
-        oss << std::fixed << std::setprecision(3) << value;
+        return oss.str();
     }
+    oss << std::fixed << std::setprecision(3) << value;
     std::string out = oss.str();
-    out.erase(out.find_last_not_of('0') + 1, std::string::npos);
-    if (!out.empty() && out.back() == '.') {
-        out.pop_back();
+    if (out.find('.') != std::string::npos) {
+        out.erase(out.find_last_not_of('0') + 1, std::string::npos);
+        if (!out.empty() && out.back() == '.') {
+            out.pop_back();
+        }
     }
     std::replace(out.begin(), out.end(), '.', 'p');
     return out;
@@ -196,11 +199,25 @@ int main(int argc, char** argv)
             return 1;
         }
 
+        std::string autoDir;
         if (outputDir.empty()) {
             std::string thickList = JoinParams(thicknessNm, "nm");
             std::string energyList = JoinParams(energiesMeV, "MeV");
-            outputDir = "scan_thick" + thickList + "_energy" + energyList +
-                        "_events" + FormatParam(events);
+            autoDir = "scan_thick" + thickList + "_energy" + energyList +
+                      "_events" + FormatParam(events);
+        }
+        std::filesystem::path baseDir = std::filesystem::current_path();
+        if (baseDir.filename() == "build") {
+            baseDir = baseDir.parent_path();
+        }
+        if (outputDir.empty()) {
+            outputDir = (baseDir / "results" / autoDir).string();
+        } else {
+            std::filesystem::path outPath(outputDir);
+            if (outPath.is_relative()) {
+                outPath = baseDir / outPath;
+            }
+            outputDir = outPath.string();
         }
         std::filesystem::create_directories(outputDir);
 

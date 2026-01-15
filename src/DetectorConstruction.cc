@@ -1,6 +1,7 @@
 #include "DetectorConstruction.hh"
 #include "G4SystemOfUnits.hh"
 #include "G4PhysicalConstants.hh"
+#include "G4RegionStore.hh"
 
 DetectorConstruction::DetectorConstruction()
     : fWorldMaterial(nullptr),
@@ -27,24 +28,27 @@ void DetectorConstruction::DefineMaterials()
 
     // Al2O3 (Aluminum Oxide) material
     // Density: 3.95 g/cm³
-    G4double density = 3.95 * g/cm3;
-    G4double a;  // atomic mass
-    G4double z;  // atomic number
-    
-    // Create Al2O3 material
-    fAl2O3Material = new G4Material("Al2O3", density, 2);
-    
-    // Aluminum
-    a = 26.98 * g/mole;
-    G4Element* elAl = new G4Element("Aluminum", "Al", z=13, a);
-    
-    // Oxygen
-    a = 16.00 * g/mole;
-    G4Element* elO = new G4Element("Oxygen", "O", z=8, a);
-    
-    // Add elements to Al2O3 (2 Al atoms, 3 O atoms)
-    fAl2O3Material->AddElement(elAl, 2);
-    fAl2O3Material->AddElement(elO, 3);
+    fAl2O3Material = G4Material::GetMaterial("Al2O3");
+    if (!fAl2O3Material) {
+        G4double density = 3.95 * g/cm3;
+        G4double a;  // atomic mass
+        G4double z;  // atomic number
+
+        // Create Al2O3 material
+        fAl2O3Material = new G4Material("Al2O3", density, 2);
+
+        // Aluminum
+        a = 26.98 * g/mole;
+        G4Element* elAl = new G4Element("Aluminum", "Al", z=13, a);
+
+        // Oxygen
+        a = 16.00 * g/mole;
+        G4Element* elO = new G4Element("Oxygen", "O", z=8, a);
+
+        // Add elements to Al2O3 (2 Al atoms, 3 O atoms)
+        fAl2O3Material->AddElement(elAl, 2);
+        fAl2O3Material->AddElement(elO, 3);
+    }
     
     G4cout << "\n--- Material properties ---" << G4endl;
     G4cout << "World material: " << fWorldMaterial->GetName() << G4endl;
@@ -112,6 +116,16 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
 
     // Define a dedicated region for the Al2O3 target so that we can
     // attach the PAI model only in this thin layer.
+    auto* regionStore = G4RegionStore::GetInstance();
+    if (fAl2O3Region) {
+        regionStore->DeRegister(fAl2O3Region);
+        delete fAl2O3Region;
+        fAl2O3Region = nullptr;
+    }
+    if (auto* existing = regionStore->GetRegion("Al2O3Region", false)) {
+        regionStore->DeRegister(existing);
+        delete existing;
+    }
     fAl2O3Region = new G4Region("Al2O3Region");
     fAl2O3Region->AddRootLogicalVolume(fAl2O3Logical);
 

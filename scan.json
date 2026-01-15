@@ -2,5 +2,5 @@
   "sample_thickness_nm": [5, 10, 15, 20, 25],
   "primary_energy_MeV": [1.0],
   "events": 100000,
-  "output_dir": "scan_thick20nm_energy1MeV_events100000"
+  "output_dir": "results/scan_thick5-10-15-20-25nm_energy1MeV_events100000"
 }

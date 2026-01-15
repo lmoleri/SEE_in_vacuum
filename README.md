@@ -65,12 +65,13 @@ Example `scan.json`:
   "sample_thickness_nm": [10, 20, 50],
   "primary_energy_MeV": [0.5, 1.0, 2.0],
   "events": 100000,
-  "output_dir": "scan_thick10-20-50nm_energy0p5-1-2MeV_events100000"
+  "output_dir": "results/scan_thick10-20-50nm_energy0p5-1-2MeV_events100000"
 }
 ```
 
-Output files are created inside `output_dir` for each combination, e.g.:
-`scan_thick10-20-50nm_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_energy1MeV_events100000.root`
+Output files are created inside `output_dir` for each combination. When `output_dir`
+is relative, it is resolved from the project root (not `build/`), e.g.:
+`results/scan_thick10-20-50nm_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_energy1MeV_events100000.root`
 
 ## Outputs
 
@@ -91,6 +92,11 @@ root -l /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C
 To plot a specific file from a parametric scan:
 ```bash
 root -l '/Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C("SEE_in_vacuum_thick20nm_energy1MeV.root")'
+```
+
+To process all scan outputs at once:
+```bash
+bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_all.sh /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
 ```
 
 Notes:
