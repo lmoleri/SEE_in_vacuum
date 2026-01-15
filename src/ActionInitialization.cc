@@ -2,6 +2,7 @@
 
 #include "PrimaryGeneratorAction.hh"
 #include "RunAction.hh"
+#include "EventAction.hh"
 #include "SteppingAction.hh"
 
 ActionInitialization::ActionInitialization()
@@ -22,10 +23,14 @@ void ActionInitialization::Build() const
     // Primary generator
     SetUserAction(new PrimaryGeneratorAction());
 
-    // Run action (collect SEY statistics)
+    // Run action (collect SEY statistics and manage analysis)
     auto* runAction = new RunAction();
     SetUserAction(runAction);
 
-    // Stepping action (detect primaries and secondaries)
-    SetUserAction(new SteppingAction(runAction));
+    // Event action (per-event accumulation)
+    auto* eventAction = new EventAction();
+    SetUserAction(eventAction);
+
+    // Stepping action (detect primaries, secondaries, and edep)
+    SetUserAction(new SteppingAction(runAction, eventAction));
 }

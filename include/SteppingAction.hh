@@ -5,22 +5,23 @@
 #include "globals.hh"
 
 class RunAction;
+class EventAction;
 class G4Step;
 
 // SteppingAction:
-//  - counts primary electrons
 //  - counts electrons leaving the Al2O3 volume into vacuum (world)
+//  - accumulates primary e- energy deposition in Al2O3
 class SteppingAction : public G4UserSteppingAction
 {
 public:
-    explicit SteppingAction(RunAction* runAction);
+    SteppingAction(RunAction* runAction, EventAction* eventAction);
     virtual ~SteppingAction();
 
-    virtual void UserSteppingAction(const G4Step*);
+    virtual void UserSteppingAction(const G4Step*) override;
 
 private:
-    RunAction* fRunAction;  // not owned
+    RunAction*   fRunAction;   // not owned
+    EventAction* fEventAction; // not owned
 };
 
 #endif
-

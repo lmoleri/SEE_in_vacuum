@@ -15,4 +15,4 @@
 # /gun/direction 0 0 1
 
 # Set number of events to simulate
-/run/beamOn 1000
+/run/beamOn 100000

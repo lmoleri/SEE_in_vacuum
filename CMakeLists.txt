@@ -25,6 +25,7 @@ set(SOURCES
     src/ActionInitialization.cc
     src/RunAction.cc
     src/SteppingAction.cc
+    src/EventAction.cc
 )
 
 # Header files
@@ -35,6 +36,7 @@ set(HEADERS
     include/ActionInitialization.hh
     include/RunAction.hh
     include/SteppingAction.hh
+    include/EventAction.hh
 )
 
 # Create executable

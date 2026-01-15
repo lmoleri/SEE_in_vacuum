@@ -1,6 +1,7 @@
 #include "SteppingAction.hh"
 
 #include "RunAction.hh"
+#include "EventAction.hh"
 
 #include "G4Step.hh"
 #include "G4Track.hh"
@@ -10,9 +11,10 @@
 #include "G4LogicalVolume.hh"
 #include "G4SystemOfUnits.hh"
 
-SteppingAction::SteppingAction(RunAction* runAction)
+SteppingAction::SteppingAction(RunAction* runAction, EventAction* eventAction)
     : G4UserSteppingAction(),
-      fRunAction(runAction)
+      fRunAction(runAction),
+      fEventAction(eventAction)
 {
 }
 
@@ -24,15 +26,14 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
 {
     if (!fRunAction) return;
 
-    const G4Track* track = step->GetTrack();
-    const auto* particle = track->GetParticleDefinition();
+    const G4Track* track   = step->GetTrack();
+    const auto*    particle = track->GetParticleDefinition();
 
     // We are interested only in electrons
     if (particle->GetParticleName() != "e-") {
         return;
     }
 
-    // Count secondary electrons that EXIT the Al2O3 layer into vacuum (world)
     const auto* prePoint  = step->GetPreStepPoint();
     const auto* postPoint = step->GetPostStepPoint();
 
@@ -46,8 +47,18 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     const G4String preName  = preVol->GetName();
     const G4String postName = postVol->GetName();
 
-    // Only consider transitions from the Al2O3 target to the world
-    // and exclude the primary beam electron (parentID == 0).
+    // 1) Accumulate primary electron energy deposition in Al2O3
+    //    (trackID==1, parentID==0, pre-step in Al2O3)
+    if (fEventAction && track->GetTrackID() == 1 && track->GetParentID() == 0 &&
+        preName == "Al2O3") {
+        const G4double edep = step->GetTotalEnergyDeposit();
+        if (edep > 0.) {
+            fEventAction->AddPrimaryEdep(edep);
+        }
+    }
+
+    // 2) Count secondary electrons that EXIT the Al2O3 layer into vacuum (world)
+    //    and exclude the primary beam electron (parentID == 0).
     if (preName == "Al2O3" && postName == "World") {
         const G4int parentId = track->GetParentID();
         if (parentId > 0) {

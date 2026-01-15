@@ -62,7 +62,7 @@ Create a `run.mac` file to run simulations:
 
 ```
 # Set number of events
-/run/beamOn 1000
+/run/beamOn 100000
 
 # Optional: Change electron energy
 /gun/energy 5 MeV
