@@ -14,6 +14,7 @@
 
 #include <vector>
 #include <string>
+#include <algorithm>
 
 namespace {
 
@@ -30,7 +31,7 @@ std::vector<TString> ListRootFiles(const char* dirPath) {
         if (file->IsDirectory()) {
             continue;
         }
-        if (name.EndsWith(".root")) {
+        if (name.EndsWith(".root") && name != "summary.root") {
             files.push_back(TString(dirPath) + "/" + name);
         }
     }
@@ -45,6 +46,15 @@ std::vector<int> BuildColors() {
     };
 }
 
+double ParseParam(const TString& value) {
+    if (value.Length() == 0) {
+        return -1.0;
+    }
+    TString tmp = value;
+    tmp.ReplaceAll("p", ".");
+    return tmp.Atof();
+}
+
 TString BaseNameNoExt(const TString& path) {
     TString name = path;
     Ssiz_t slash = name.Last('/');
@@ -55,6 +65,41 @@ TString BaseNameNoExt(const TString& path) {
         name = name(0, name.Length() - 5);
     }
     return name;
+}
+
+TString ExtractBetween(const TString& src, const TString& startKey, const TString& endKey) {
+    Ssiz_t start = src.Index(startKey);
+    if (start == kNPOS) {
+        return "";
+    }
+    start += startKey.Length();
+    if (endKey.Length() == 0) {
+        return src(start, src.Length() - start);
+    }
+    Ssiz_t end = src.Index(endKey, start);
+    if (end == kNPOS) {
+        return "";
+    }
+    return src(start, end - start);
+}
+
+TString BuildLabelFromName(const TString& baseName) {
+    TString thickness = ExtractBetween(baseName, "thick", "nm");
+    TString energy = ExtractBetween(baseName, "energy", "MeV");
+    TString label;
+    if (thickness.Length() > 0) {
+        label += "t=" + thickness + " nm";
+    }
+    if (energy.Length() > 0) {
+        if (label.Length() > 0) {
+            label += ", ";
+        }
+        label += "E=" + energy + " MeV";
+    }
+    if (label.Length() == 0) {
+        label = baseName;
+    }
+    return label;
 }
 
 } // namespace
@@ -92,19 +137,55 @@ void draw_summary(const char* scanDir,
     c2->SetGrid();
     c2->SetLeftMargin(0.15);
 
-    TLegend* leg1 = new TLegend(0.55, 0.65, 0.88, 0.88);
+    TLegend* leg1 = new TLegend(0.45, 0.65, 0.78, 0.88);
     leg1->SetBorderSize(0);
     leg1->SetFillStyle(0);
+    leg1->SetTextSize(0.045);
 
-    TLegend* leg2 = new TLegend(0.55, 0.65, 0.88, 0.88);
+    TLegend* leg2 = new TLegend(0.45, 0.65, 0.78, 0.88);
     leg2->SetBorderSize(0);
     leg2->SetFillStyle(0);
+    leg2->SetTextSize(0.035);
 
     bool firstPrimary = true;
     bool firstSteps = true;
 
-    int colorIndex = 0;
+    struct FileEntry {
+        TString path;
+        double thickness;
+        double energy;
+        double events;
+    };
+    std::vector<FileEntry> entries;
+    entries.reserve(files.size());
     for (const auto& filePath : files) {
+        TString baseName = BaseNameNoExt(filePath);
+        double thickness = ParseParam(ExtractBetween(baseName, "thick", "nm"));
+        double energy = ParseParam(ExtractBetween(baseName, "energy", "MeV"));
+        double events = ParseParam(ExtractBetween(baseName, "events", ""));
+        entries.push_back({filePath, thickness, energy, events});
+    }
+    std::sort(entries.begin(), entries.end(), [](const FileEntry& a, const FileEntry& b) {
+        if (a.thickness != b.thickness) {
+            return a.thickness < b.thickness;
+        }
+        if (a.energy != b.energy) {
+            return a.energy < b.energy;
+        }
+        return a.events < b.events;
+    });
+
+    int colorIndex = 0;
+    TString eventsTitle;
+    if (!entries.empty() && entries.front().events > 0.) {
+        eventsTitle = Form("N=%.0f", entries.front().events);
+        leg1->SetHeader(eventsTitle, "C");
+        leg2->SetHeader(eventsTitle, "C");
+    } else {
+        leg2->SetHeader("", "C");
+    }
+    for (const auto& entry : entries) {
+        const auto& filePath = entry.path;
         TFile* f = TFile::Open(filePath, "READ");
         if (!f || f->IsZombie()) {
             printf("Warning: cannot open %s\n", filePath.Data());
@@ -119,7 +200,8 @@ void draw_summary(const char* scanDir,
             continue;
         }
 
-        TString label = BaseNameNoExt(filePath);
+        TString baseName = BaseNameNoExt(filePath);
+        TString label = BuildLabelFromName(baseName);
         int color = colors[colorIndex % nColors];
         colorIndex++;
 
@@ -133,8 +215,8 @@ void draw_summary(const char* scanDir,
         hStepsClone->SetDirectory(nullptr);
         hPrimaryClone->SetLineColor(color);
         hStepsClone->SetLineColor(color);
-        hPrimaryClone->SetLineWidth(2);
-        hStepsClone->SetLineWidth(2);
+        hPrimaryClone->SetLineWidth(5);
+        hStepsClone->SetLineWidth(4);
 
         c1->cd();
         if (firstPrimary) {
@@ -149,6 +231,7 @@ void draw_summary(const char* scanDir,
 
         c2->cd();
         if (firstSteps) {
+            hStepsClone->SetTitle("EdepInteractions Summary (e^{-})");
             hStepsClone->GetYaxis()->SetTitleOffset(1.35);
             hStepsClone->GetYaxis()->SetLabelSize(0.035);
             hStepsClone->Draw("HIST");
