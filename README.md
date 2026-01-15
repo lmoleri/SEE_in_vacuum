@@ -1,6 +1,7 @@
 # GEANT4 SEE in Vacuum Simulation
 
-This GEANT4 simulation models an electron gun shooting electrons at an Al2O3 (aluminum oxide) layer.
+This GEANT4 simulation models a primary particle gun (electron or muon) shooting at an Al2O3
+(aluminum oxide) layer.
 
 ## Geometry
 
@@ -9,8 +10,8 @@ This GEANT4 simulation models an electron gun shooting electrons at an Al2O3 (al
   - Diameter: 100 nm
   - Shape: Cylindrical disk
 
-- **Electron Gun**:
-  - Particle: Electron (e-)
+- **Primary Gun**:
+  - Particle: Electron (e-) or Muon (mu-)
   - Default energy: 1 MeV
   - Default position: 1 micron above the Al2O3 layer
   - Default direction: Downward along +z axis
@@ -66,7 +67,7 @@ Example `scan.json`:
   "primary_energy_MeV": [0.5, 1.0, 2.0],
   "primary_particle": "e-",
   "events": 100000,
-  "output_dir": "results/scan_thick10-20-50nm_energy0p5-1-2MeV_events100000"
+  "output_dir": "results/scan_thick10-20-50nm_particlee-_energy0p5-1-2MeV_events100000"
 }
 ```
 
@@ -74,14 +75,14 @@ Example `scan.json`:
 
 Output files are created inside `output_dir` for each combination. When `output_dir`
 is relative, it is resolved from the project root (not `build/`), e.g.:
-`results/scan_thick10-20-50nm_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_energy1MeV_events100000.root`
+`results/scan_thick10-20-50nm_particlee-_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_particlee-_energy1MeV_events100000.root`
 
 ## Outputs
 
 - `SEE_in_vacuum.root` (ROOT file with histograms and canvases)
-  - `EdepPrimary`: primary e- energy deposition in Al2O3 (eV)
+  - `EdepPrimary`: primary particle energy deposition in Al2O3 (eV)
   - `EdepInteractions`: number of energy-depositing steps in Al2O3 per event
-  - `RunMeta`: ntuple with `primaryEnergyMeV` and `sampleThicknessNm`
+  - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`, and `primaryParticle`
   - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`: canvases saved with annotations
 
 ## Plotting
@@ -102,7 +103,7 @@ To process all scan outputs at once:
 bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_all.sh /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
 ```
 
-To create a summary ROOT file with overlapping histograms and legends:
+To create summary ROOT files with overlapping histograms and legends (one per particle):
 ```bash
 bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summary.sh /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
 ```
