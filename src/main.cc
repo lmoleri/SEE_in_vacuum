@@ -89,11 +89,16 @@ bool ParseNumber(const std::string& content, const std::string& key, double& out
 std::string FormatParam(double value)
 {
     std::ostringstream oss;
+    const double absValue = std::abs(value);
     if (std::abs(value - std::round(value)) < 1e-6) {
         oss << std::fixed << std::setprecision(0) << value;
         return oss.str();
     }
-    oss << std::fixed << std::setprecision(3) << value;
+    if (absValue > 0. && absValue < 0.001) {
+        oss << std::fixed << std::setprecision(6) << value;
+    } else {
+        oss << std::fixed << std::setprecision(3) << value;
+    }
     std::string out = oss.str();
     if (out.find('.') != std::string::npos) {
         out.erase(out.find_last_not_of('0') + 1, std::string::npos);

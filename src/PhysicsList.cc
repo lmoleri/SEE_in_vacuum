@@ -7,6 +7,7 @@
 
 #include "G4SystemOfUnits.hh"
 #include "G4ProductionCutsTable.hh"
+#include "G4EmParameters.hh"
 
 #include "G4RegionStore.hh"
 #include "G4PAIModel.hh"
@@ -28,6 +29,12 @@ PhysicsList::~PhysicsList()
 
 void PhysicsList::ConstructProcess()
 {
+    // Enforce low-energy tracking thresholds before building EM tables.
+    auto* emParams = G4EmParameters::Instance();
+    emParams->SetMinEnergy(1 * eV);
+    emParams->SetLowestElectronEnergy(1 * eV);
+    emParams->SetLowestMuHadEnergy(1 * eV);
+
     // Let the modular physics list construct all standard processes first
     G4VModularPhysicsList::ConstructProcess();
 
@@ -74,5 +81,5 @@ void PhysicsList::SetCuts()
     SetCutsWithDefault();
     
     // Set production thresholds
-    G4ProductionCutsTable::GetProductionCutsTable()->SetEnergyRange(100*eV, 1*GeV);
+    G4ProductionCutsTable::GetProductionCutsTable()->SetEnergyRange(1*eV, 1*GeV);
 }
