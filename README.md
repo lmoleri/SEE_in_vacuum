@@ -99,6 +99,11 @@ To process all scan outputs at once:
 bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_all.sh /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
 ```
 
+To create a summary ROOT file with overlapping histograms and legends:
+```bash
+bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summary.sh /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
+```
+
 Notes:
 - The energy deposition plot uses log Y scale by default.
 - Overflow entries are folded into the last visible bin for `EdepPrimary`.
