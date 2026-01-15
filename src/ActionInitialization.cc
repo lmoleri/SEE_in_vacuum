@@ -20,15 +20,15 @@ void ActionInitialization::BuildForMaster() const
 
 void ActionInitialization::Build() const
 {
-    // Primary generator
-    SetUserAction(new PrimaryGeneratorAction());
-
     // Run action (collect SEY statistics and manage analysis)
     auto* runAction = new RunAction();
     SetUserAction(runAction);
 
+    // Primary generator
+    SetUserAction(new PrimaryGeneratorAction(runAction));
+
     // Event action (per-event accumulation)
-    auto* eventAction = new EventAction();
+    auto* eventAction = new EventAction(runAction);
     SetUserAction(eventAction);
 
     // Stepping action (detect primaries, secondaries, and edep)

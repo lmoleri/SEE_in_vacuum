@@ -85,6 +85,8 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
     // Diameter: 100 nm
     G4double thickness = 20.0 * nm;
     G4double radius = 50.0 * nm;  // radius = diameter/2
+
+    fSampleThickness = thickness;
     
     G4Tubs* al2o3Solid = new G4Tubs("Al2O3",
                                     0.0,           // inner radius
@@ -115,9 +117,14 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
 
     G4cout << "\n--- Geometry ---" << G4endl;
     G4cout << "Al2O3 layer:" << G4endl;
-    G4cout << "  Thickness: " << thickness / nm << " nm" << G4endl;
+    G4cout << "  Thickness: " << fSampleThickness / nm << " nm" << G4endl;
     G4cout << "  Diameter: " << 2.0 * radius / nm << " nm" << G4endl;
     G4cout << "  Volume: " << M_PI * radius * radius * thickness / (nm*nm*nm) << " nm³" << G4endl;
 
     return fWorldPhysical;
+}
+
+G4double DetectorConstruction::GetSampleThickness() const
+{
+    return fSampleThickness;
 }

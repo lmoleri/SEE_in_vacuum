@@ -1,9 +1,11 @@
 #include "PrimaryGeneratorAction.hh"
+#include "RunAction.hh"
 #include "G4ParticleTable.hh"
 #include "G4ParticleDefinition.hh"
 #include "G4SystemOfUnits.hh"
 
-PrimaryGeneratorAction::PrimaryGeneratorAction()
+PrimaryGeneratorAction::PrimaryGeneratorAction(RunAction* runAction)
+    : fRunAction(runAction)
 {
     G4int n_particle = 1;
     fParticleGun = new G4ParticleGun(n_particle);
@@ -32,5 +34,8 @@ PrimaryGeneratorAction::~PrimaryGeneratorAction()
 
 void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
 {
+    if (fRunAction) {
+        fRunAction->SetPrimaryEnergy(fParticleGun->GetParticleEnergy());
+    }
     fParticleGun->GeneratePrimaryVertex(anEvent);
 }

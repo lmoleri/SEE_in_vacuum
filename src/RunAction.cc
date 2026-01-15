@@ -6,10 +6,15 @@
 #include "G4ios.hh"
 #include "G4AnalysisManager.hh"
 
+#include "DetectorConstruction.hh"
+
 RunAction::RunAction()
     : G4UserRunAction(),
       fNPrimaryElectrons(0),
-      fNSecondaryElectrons(0)
+      fNSecondaryElectrons(0),
+      fMinNonZeroEdep(-1.),
+      fPrimaryEnergy(0.),
+      fSampleThickness(0.)
 {
 }
 
@@ -22,6 +27,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
 {
     fNPrimaryElectrons   = 0;
     fNSecondaryElectrons = 0;
+    fMinNonZeroEdep = -1.;
 
     auto* analysisManager = G4AnalysisManager::Instance();
 
@@ -31,6 +37,24 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
     // Open output file
     analysisManager->OpenFile("SEE_in_vacuum.root");
+
+    // Capture sample thickness from detector if not set
+    if (fSampleThickness <= 0.) {
+        auto* det = dynamic_cast<const DetectorConstruction*>(
+            G4RunManager::GetRunManager()->GetUserDetectorConstruction());
+        if (det) {
+            fSampleThickness = det->GetSampleThickness();
+        }
+    }
+
+    static G4bool metaCreated = false;
+    if (!metaCreated) {
+        analysisManager->CreateNtuple("RunMeta", "Run metadata");
+        analysisManager->CreateNtupleDColumn("primaryEnergyMeV");
+        analysisManager->CreateNtupleDColumn("sampleThicknessNm");
+        analysisManager->FinishNtuple();
+        metaCreated = true;
+    }
 
     // Create a 1D histogram for primary e- energy deposition in Al2O3
     // ID 0: EdepPrimary
@@ -48,6 +72,19 @@ void RunAction::BeginOfRunAction(const G4Run*)
     // Set axis labels explicitly (X-axis in eV units)
     analysisManager->SetH1XAxisTitle(histoId, "Energy deposition (eV)");
     analysisManager->SetH1YAxisTitle(histoId, "Number of events");
+
+    // Create a 1D histogram for the number of microscopic energy-depositing
+    // steps in Al2O3 per event
+    G4int stepsHistoId = analysisManager->CreateH1(
+        "EdepInteractions",
+        "Microscopic energy-depositing steps in Al_{2}O_{3} per event",
+        10,   // number of bins (1 step per bin)
+        0.,   // min count
+        10.   // max count
+    );
+
+    analysisManager->SetH1XAxisTitle(stepsHistoId, "Energy-depositing steps per event");
+    analysisManager->SetH1YAxisTitle(stepsHistoId, "Number of events");
 }
 
 void RunAction::EndOfRunAction(const G4Run* run)
@@ -72,11 +109,21 @@ void RunAction::EndOfRunAction(const G4Run* run)
         G4cout << "  Secondary electron yield (SEY) not defined (no primaries counted)"
                << G4endl;
     }
+    if (fMinNonZeroEdep > 0.) {
+        G4cout << "  Min non-zero primary edep : " << fMinNonZeroEdep / eV << " eV"
+               << G4endl;
+    } else {
+        G4cout << "  Min non-zero primary edep : none" << G4endl;
+    }
     G4cout << "==========================\n" << G4endl;
 
     // Write and close analysis output
     auto* analysisManager = G4AnalysisManager::Instance();
     if (analysisManager) {
+        analysisManager->FillNtupleDColumn(0, fPrimaryEnergy / MeV);
+        analysisManager->FillNtupleDColumn(1, fSampleThickness / nm);
+        analysisManager->AddNtupleRow();
+
         analysisManager->Write();
         analysisManager->CloseFile();
     }
@@ -90,5 +137,25 @@ void RunAction::AddPrimaryElectron()
 void RunAction::AddSecondaryElectron()
 {
     ++fNSecondaryElectrons;
+}
+
+void RunAction::UpdateMinNonZeroEdep(G4double edep)
+{
+    if (edep <= 0.) {
+        return;
+    }
+    if (fMinNonZeroEdep < 0. || edep < fMinNonZeroEdep) {
+        fMinNonZeroEdep = edep;
+    }
+}
+
+void RunAction::SetPrimaryEnergy(G4double energy)
+{
+    fPrimaryEnergy = energy;
+}
+
+void RunAction::SetSampleThickness(G4double thickness)
+{
+    fSampleThickness = thickness;
 }
 

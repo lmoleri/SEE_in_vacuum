@@ -26,14 +26,6 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
 {
     if (!fRunAction) return;
 
-    const G4Track* track   = step->GetTrack();
-    const auto*    particle = track->GetParticleDefinition();
-
-    // We are interested only in electrons
-    if (particle->GetParticleName() != "e-") {
-        return;
-    }
-
     const auto* prePoint  = step->GetPreStepPoint();
     const auto* postPoint = step->GetPostStepPoint();
 
@@ -46,6 +38,22 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
 
     const G4String preName  = preVol->GetName();
     const G4String postName = postVol->GetName();
+
+    // Count any energy-depositing step in Al2O3 (all particles)
+    if (fEventAction && preName == "Al2O3") {
+        const G4double edep = step->GetTotalEnergyDeposit();
+        if (edep > 0.) {
+            fEventAction->AddEdepInteraction();
+        }
+    }
+
+    const G4Track* track    = step->GetTrack();
+    const auto*    particle = track->GetParticleDefinition();
+
+    // We are interested only in electrons for the metrics below
+    if (particle->GetParticleName() != "e-") {
+        return;
+    }
 
     // 1) Accumulate primary electron energy deposition in Al2O3
     //    (trackID==1, parentID==0, pre-step in Al2O3)

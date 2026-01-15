@@ -19,6 +19,7 @@ public:
     virtual ~DetectorConstruction();
 
     virtual G4VPhysicalVolume* Construct();
+    G4double GetSampleThickness() const;
 
 private:
     void DefineMaterials();
@@ -35,6 +36,8 @@ private:
 
     // Region used for applying the PAI model
     G4Region* fAl2O3Region = nullptr;
+
+    G4double fSampleThickness = 0.;
 };
 
 #endif

@@ -8,11 +8,12 @@
 
 class G4ParticleGun;
 class G4Event;
+class RunAction;
 
 class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction
 {
 public:
-    PrimaryGeneratorAction();
+    explicit PrimaryGeneratorAction(RunAction* runAction);
     virtual ~PrimaryGeneratorAction();
 
     virtual void GeneratePrimaries(G4Event*);
@@ -23,6 +24,7 @@ public:
 
 private:
     G4ParticleGun* fParticleGun;
+    RunAction* fRunAction;
 };
 
 #endif

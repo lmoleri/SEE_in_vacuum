@@ -15,6 +15,11 @@ This GEANT4 simulation models an electron gun shooting electrons at an Al2O3 (al
   - Default position: 1 micron above the Al2O3 layer
   - Default direction: Downward along +z axis
 
+## Requirements
+
+- Geant4 (via conda environment `geant4`)
+- ROOT (installed in the same conda environment)
+
 ## Building the Project
 
 1. Create a build directory:
@@ -25,6 +30,7 @@ cd build
 
 2. Configure with CMake:
 ```bash
+conda activate geant4
 cmake ..
 ```
 
@@ -42,8 +48,29 @@ make
 
 ### Batch Mode:
 ```bash
-./SEE_in_vacuum run.mac
+./SEE_in_vacuum ../run.mac
 ```
+
+## Outputs
+
+- `SEE_in_vacuum.root` (ROOT file with histograms and canvases)
+  - `EdepPrimary`: primary e- energy deposition in Al2O3 (eV)
+  - `EdepInteractions`: number of energy-depositing steps in Al2O3 per event
+  - `RunMeta`: ntuple with `primaryEnergyMeV` and `sampleThicknessNm`
+  - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`: canvases saved with annotations
+
+## Plotting
+
+Run the ROOT macro to draw and save canvases (with annotations) into the ROOT file:
+
+```bash
+root -l /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C
+```
+
+Notes:
+- The energy deposition plot uses log Y scale by default.
+- Overflow entries are folded into the last visible bin for `EdepPrimary`.
+- Annotations read `RunMeta` from the ROOT file.
 
 ## Customization
 

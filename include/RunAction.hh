@@ -20,9 +20,18 @@ public:
     void AddPrimaryElectron();
     void AddSecondaryElectron();
 
+    // Track minimum non-zero primary energy deposition per event
+    void UpdateMinNonZeroEdep(G4double edep);
+
+    void SetPrimaryEnergy(G4double energy);
+    void SetSampleThickness(G4double thickness);
+
 private:
     G4int fNPrimaryElectrons;
     G4int fNSecondaryElectrons;
+    G4double fMinNonZeroEdep;
+    G4double fPrimaryEnergy;
+    G4double fSampleThickness;
 };
 
 #endif
