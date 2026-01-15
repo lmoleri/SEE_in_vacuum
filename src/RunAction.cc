@@ -14,7 +14,8 @@ RunAction::RunAction()
       fNSecondaryElectrons(0),
       fMinNonZeroEdep(-1.),
       fPrimaryEnergy(0.),
-      fSampleThickness(0.)
+      fSampleThickness(0.),
+      fOutputTag("SEE_in_vacuum")
 {
 }
 
@@ -35,9 +36,6 @@ void RunAction::BeginOfRunAction(const G4Run*)
     analysisManager->SetVerboseLevel(1);
     analysisManager->SetFirstHistoId(0);
 
-    // Open output file
-    analysisManager->OpenFile("SEE_in_vacuum.root");
-
     // Capture sample thickness from detector if not set
     if (fSampleThickness <= 0.) {
         auto* det = dynamic_cast<const DetectorConstruction*>(
@@ -48,6 +46,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
     }
 
     static G4bool metaCreated = false;
+    static G4bool histosCreated = false;
     if (!metaCreated) {
         analysisManager->CreateNtuple("RunMeta", "Run metadata");
         analysisManager->CreateNtupleDColumn("primaryEnergyMeV");
@@ -56,35 +55,51 @@ void RunAction::BeginOfRunAction(const G4Run*)
         metaCreated = true;
     }
 
-    // Create a 1D histogram for primary e- energy deposition in Al2O3
-    // ID 0: EdepPrimary
-    // Based on typical energy deposition: mean ~6 eV, RMS ~29 eV
-    // Use range 0-200 eV with fine binning for better resolution
-    // Note: Values will be filled in eV units (converted in EventAction)
-    G4int histoId = analysisManager->CreateH1(
-        "EdepPrimary",
-        "Primary e^{-} energy deposition in Al_{2}O_{3}",
-        200,   // number of bins (1 eV per bin for good resolution)
-        0.,    // Edep min (eV)
-        200.   // Edep max (eV, covers mean + ~7*RMS)
-    );
-    
-    // Set axis labels explicitly (X-axis in eV units)
-    analysisManager->SetH1XAxisTitle(histoId, "Energy deposition (eV)");
-    analysisManager->SetH1YAxisTitle(histoId, "Number of events");
+    if (histosCreated) {
+        analysisManager->Reset();
+    } else {
+        // Create a 1D histogram for primary e- energy deposition in Al2O3
+        // ID 0: EdepPrimary
+        // Based on typical energy deposition: mean ~6 eV, RMS ~29 eV
+        // Use range 0-200 eV with fine binning for better resolution
+        // Note: Values will be filled in eV units (converted in EventAction)
+        G4int histoId = analysisManager->CreateH1(
+            "EdepPrimary",
+            "Primary e^{-} energy deposition in Al_{2}O_{3}",
+            200,   // number of bins (1 eV per bin for good resolution)
+            0.,    // Edep min (eV)
+            200.   // Edep max (eV, covers mean + ~7*RMS)
+        );
 
-    // Create a 1D histogram for the number of microscopic energy-depositing
-    // steps in Al2O3 per event
-    G4int stepsHistoId = analysisManager->CreateH1(
-        "EdepInteractions",
-        "Microscopic energy-depositing steps in Al_{2}O_{3} per event",
-        10,   // number of bins (1 step per bin)
-        0.,   // min count
-        10.   // max count
-    );
+        // Set axis labels explicitly (X-axis in eV units)
+        analysisManager->SetH1XAxisTitle(histoId, "Energy deposition (eV)");
+        analysisManager->SetH1YAxisTitle(histoId, "Number of events");
 
-    analysisManager->SetH1XAxisTitle(stepsHistoId, "Energy-depositing steps per event");
-    analysisManager->SetH1YAxisTitle(stepsHistoId, "Number of events");
+        // Create a 1D histogram for the number of microscopic energy-depositing
+        // steps in Al2O3 per event
+        G4int stepsHistoId = analysisManager->CreateH1(
+            "EdepInteractions",
+            "Microscopic energy-depositing steps in Al_{2}O_{3} per event",
+            10,   // number of bins (1 step per bin)
+            0.,   // min count
+            10.   // max count
+        );
+
+        analysisManager->SetH1XAxisTitle(stepsHistoId, "Energy-depositing steps per event");
+        analysisManager->SetH1YAxisTitle(stepsHistoId, "Number of events");
+
+        histosCreated = true;
+    }
+
+    // Open output file for this run
+    G4String fileName = fOutputTag;
+    if (fileName.empty()) {
+        fileName = "SEE_in_vacuum";
+    }
+    if (fileName.size() < 5 || fileName.substr(fileName.size() - 5) != ".root") {
+        fileName += ".root";
+    }
+    analysisManager->OpenFile(fileName);
 }
 
 void RunAction::EndOfRunAction(const G4Run* run)
@@ -157,5 +172,10 @@ void RunAction::SetPrimaryEnergy(G4double energy)
 void RunAction::SetSampleThickness(G4double thickness)
 {
     fSampleThickness = thickness;
+}
+
+void RunAction::SetOutputTag(const G4String& tag)
+{
+    fOutputTag = tag;
 }
 

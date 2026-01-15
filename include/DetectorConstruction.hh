@@ -20,6 +20,7 @@ public:
 
     virtual G4VPhysicalVolume* Construct();
     G4double GetSampleThickness() const;
+    void SetSampleThickness(G4double thickness);
 
 private:
     void DefineMaterials();

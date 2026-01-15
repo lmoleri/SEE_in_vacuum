@@ -51,6 +51,27 @@ make
 ./SEE_in_vacuum ../run.mac
 ```
 
+### Parametric Scan (JSON)
+
+Create a JSON file with arrays of thickness and energy values, then pass it to the executable:
+
+```bash
+./SEE_in_vacuum ../scan.json
+```
+
+Example `scan.json`:
+```json
+{
+  "sample_thickness_nm": [10, 20, 50],
+  "primary_energy_MeV": [0.5, 1.0, 2.0],
+  "events": 100000,
+  "output_dir": "scan_thick10-20-50nm_energy0p5-1-2MeV_events100000"
+}
+```
+
+Output files are created inside `output_dir` for each combination, e.g.:
+`scan_thick10-20-50nm_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_energy1MeV_events100000.root`
+
 ## Outputs
 
 - `SEE_in_vacuum.root` (ROOT file with histograms and canvases)
@@ -65,6 +86,11 @@ Run the ROOT macro to draw and save canvases (with annotations) into the ROOT fi
 
 ```bash
 root -l /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C
+```
+
+To plot a specific file from a parametric scan:
+```bash
+root -l '/Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C("SEE_in_vacuum_thick20nm_energy1MeV.root")'
 ```
 
 Notes:

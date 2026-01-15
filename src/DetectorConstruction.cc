@@ -11,6 +11,7 @@ DetectorConstruction::DetectorConstruction()
       fAl2O3Physical(nullptr),
       fAl2O3Region(nullptr)
 {
+    fSampleThickness = 20.0 * nm;
 }
 
 DetectorConstruction::~DetectorConstruction()
@@ -81,9 +82,8 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
         true);                      // check overlaps
 
     // Al2O3 layer - cylindrical disk
-    // Thickness: 20 nm
-    // Diameter: 100 nm
-    G4double thickness = 20.0 * nm;
+    // Thickness and diameter are configurable (defaults: 20 nm, 100 nm)
+    G4double thickness = fSampleThickness > 0. ? fSampleThickness : 20.0 * nm;
     G4double radius = 50.0 * nm;  // radius = diameter/2
 
     fSampleThickness = thickness;
@@ -127,4 +127,11 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
 G4double DetectorConstruction::GetSampleThickness() const
 {
     return fSampleThickness;
+}
+
+void DetectorConstruction::SetSampleThickness(G4double thickness)
+{
+    if (thickness > 0.) {
+        fSampleThickness = thickness;
+    }
 }

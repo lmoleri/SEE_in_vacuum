@@ -21,16 +21,17 @@ void ActionInitialization::BuildForMaster() const
 void ActionInitialization::Build() const
 {
     // Run action (collect SEY statistics and manage analysis)
-    auto* runAction = new RunAction();
-    SetUserAction(runAction);
+    fRunAction = new RunAction();
+    SetUserAction(fRunAction);
 
     // Primary generator
-    SetUserAction(new PrimaryGeneratorAction(runAction));
+    fPrimaryGenerator = new PrimaryGeneratorAction(fRunAction);
+    SetUserAction(fPrimaryGenerator);
 
     // Event action (per-event accumulation)
-    auto* eventAction = new EventAction(runAction);
-    SetUserAction(eventAction);
+    fEventAction = new EventAction(fRunAction);
+    SetUserAction(fEventAction);
 
     // Stepping action (detect primaries, secondaries, and edep)
-    SetUserAction(new SteppingAction(runAction, eventAction));
+    SetUserAction(new SteppingAction(fRunAction, fEventAction));
 }

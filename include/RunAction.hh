@@ -25,6 +25,7 @@ public:
 
     void SetPrimaryEnergy(G4double energy);
     void SetSampleThickness(G4double thickness);
+    void SetOutputTag(const G4String& tag);
 
 private:
     G4int fNPrimaryElectrons;
@@ -32,6 +33,7 @@ private:
     G4double fMinNonZeroEdep;
     G4double fPrimaryEnergy;
     G4double fSampleThickness;
+    G4String fOutputTag;
 };
 
 #endif

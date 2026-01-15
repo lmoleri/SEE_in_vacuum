@@ -1,10 +1,11 @@
 // ROOT macro to draw the energy deposition histogram
 // Usage: root -l draw_histo.C
 // Or from build directory: root -l ../draw_histo.C
+// Optional: root -l 'draw_histo.C("file.root")'
 
-void draw_histo() {
+void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     // Open the ROOT file
-    TFile* f = TFile::Open("SEE_in_vacuum.root", "UPDATE");
+    TFile* f = TFile::Open(fileName, "UPDATE");
     if (!f || f->IsZombie()) {
         cout << "Error: Cannot open SEE_in_vacuum.root" << endl;
         cout << "Make sure you're running from the build directory" << endl;
