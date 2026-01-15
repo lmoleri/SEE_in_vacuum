@@ -30,6 +30,10 @@ if [[ ${#roots[@]} -eq 0 ]]; then
 fi
 
 for f in "${roots[@]}"; do
+  base="$(basename "$f")"
+  if [[ "$base" == summary*.root ]]; then
+    continue
+  fi
   echo "Processing $f"
   root -l -b -q "$macro(\"$f\")"
 done

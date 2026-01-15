@@ -10,10 +10,8 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(RunAction* runAction)
     G4int n_particle = 1;
     fParticleGun = new G4ParticleGun(n_particle);
 
-    // Set particle type to electron
-    G4ParticleTable* particleTable = G4ParticleTable::GetParticleTable();
-    G4ParticleDefinition* particle = particleTable->FindParticle("e-");
-    fParticleGun->SetParticleDefinition(particle);
+    // Default particle type: electron
+    SetParticleName("e-");
 
     // Default energy: 1 MeV
     fParticleGun->SetParticleEnergy(1.0 * MeV);
@@ -36,6 +34,24 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
 {
     if (fRunAction) {
         fRunAction->SetPrimaryEnergy(fParticleGun->GetParticleEnergy());
+        if (auto* def = fParticleGun->GetParticleDefinition()) {
+            fRunAction->SetPrimaryParticleName(def->GetParticleName());
+        }
     }
     fParticleGun->GeneratePrimaryVertex(anEvent);
+}
+
+void PrimaryGeneratorAction::SetParticleName(const G4String& name)
+{
+    auto* particleTable = G4ParticleTable::GetParticleTable();
+    auto* particle = particleTable->FindParticle(name);
+    if (!particle) {
+        G4cerr << "PrimaryGeneratorAction: Unknown particle '" << name
+               << "', falling back to e-" << G4endl;
+        particle = particleTable->FindParticle("e-");
+    }
+    fParticleGun->SetParticleDefinition(particle);
+    if (fRunAction && particle) {
+        fRunAction->SetPrimaryParticleName(particle->GetParticleName());
+    }
 }

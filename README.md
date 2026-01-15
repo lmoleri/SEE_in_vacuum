@@ -64,10 +64,13 @@ Example `scan.json`:
 {
   "sample_thickness_nm": [10, 20, 50],
   "primary_energy_MeV": [0.5, 1.0, 2.0],
+  "primary_particle": "e-",
   "events": 100000,
   "output_dir": "results/scan_thick10-20-50nm_energy0p5-1-2MeV_events100000"
 }
 ```
+
+`primary_particle` can be `"e-"` or `"mu-"` (default is `"e-"`).
 
 Output files are created inside `output_dir` for each combination. When `output_dir`
 is relative, it is resolved from the project root (not `build/`), e.g.:

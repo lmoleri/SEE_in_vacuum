@@ -11,10 +11,15 @@
 #include "TList.h"
 #include "TString.h"
 #include "TStyle.h"
+#include "TF1.h"
+#include "TGraph.h"
+#include "TMultiGraph.h"
 
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <map>
+#include <cmath>
 
 namespace {
 
@@ -31,7 +36,7 @@ std::vector<TString> ListRootFiles(const char* dirPath) {
         if (file->IsDirectory()) {
             continue;
         }
-        if (name.EndsWith(".root") && name != "summary.root") {
+        if (name.EndsWith(".root") && !name.BeginsWith("summary")) {
             files.push_back(TString(dirPath) + "/" + name);
         }
     }
@@ -102,6 +107,22 @@ TString BuildLabelFromName(const TString& baseName) {
     return label;
 }
 
+TString EnergyLabel(double energy) {
+    if (energy <= 0.) {
+        return "E=n/a";
+    }
+    return Form("E=%.3g MeV", energy);
+}
+
+TString ParticleLabel(const TString& name) {
+    if (name == "e-" || name == "e") return "e^{-}";
+    if (name == "e+") return "e^{+}";
+    if (name == "mu-" || name == "mu") return "#mu^{-}";
+    if (name == "mu+") return "#mu^{+}";
+    if (!name.IsNull()) return name;
+    return "e^{-}";
+}
+
 } // namespace
 
 void draw_summary(const char* scanDir,
@@ -117,44 +138,17 @@ void draw_summary(const char* scanDir,
         return;
     }
 
-    TFile* out = TFile::Open(outputFile, "RECREATE");
-    if (!out || out->IsZombie()) {
-        printf("Error: cannot create output file %s\n", outputFile);
-        return;
-    }
-
     gStyle->SetOptStat(0);
 
     auto colors = BuildColors();
     const int nColors = static_cast<int>(colors.size());
-
-    TCanvas* c1 = new TCanvas("EdepPrimarySummary", "EdepPrimary Summary", 900, 700);
-    c1->SetGrid();
-    c1->SetLogy();
-    c1->SetLeftMargin(0.15);
-
-    TCanvas* c2 = new TCanvas("EdepInteractionsSummary", "EdepInteractions Summary", 900, 700);
-    c2->SetGrid();
-    c2->SetLeftMargin(0.15);
-
-    TLegend* leg1 = new TLegend(0.45, 0.65, 0.78, 0.88);
-    leg1->SetBorderSize(0);
-    leg1->SetFillStyle(0);
-    leg1->SetTextSize(0.045);
-
-    TLegend* leg2 = new TLegend(0.45, 0.65, 0.78, 0.88);
-    leg2->SetBorderSize(0);
-    leg2->SetFillStyle(0);
-    leg2->SetTextSize(0.035);
-
-    bool firstPrimary = true;
-    bool firstSteps = true;
 
     struct FileEntry {
         TString path;
         double thickness;
         double energy;
         double events;
+        TString particle;
     };
     std::vector<FileEntry> entries;
     entries.reserve(files.size());
@@ -163,7 +157,29 @@ void draw_summary(const char* scanDir,
         double thickness = ParseParam(ExtractBetween(baseName, "thick", "nm"));
         double energy = ParseParam(ExtractBetween(baseName, "energy", "MeV"));
         double events = ParseParam(ExtractBetween(baseName, "events", ""));
-        entries.push_back({filePath, thickness, energy, events});
+        TString particle = ExtractBetween(baseName, "particle", "_energy");
+        entries.push_back({filePath, thickness, energy, events, particle});
+    }
+
+    for (auto& entry : entries) {
+        TFile* f = TFile::Open(entry.path, "READ");
+        if (!f || f->IsZombie()) {
+            continue;
+        }
+        TTree* meta = dynamic_cast<TTree*>(f->Get("RunMeta"));
+        if (meta) {
+            char particle[64] = "";
+            if (meta->GetBranch("primaryParticle")) {
+                meta->SetBranchAddress("primaryParticle", particle);
+            }
+            if (meta->GetEntries() > 0) {
+                meta->GetEntry(0);
+                if (particle[0] != '\0') {
+                    entry.particle = particle;
+                }
+            }
+        }
+        f->Close();
     }
     std::sort(entries.begin(), entries.end(), [](const FileEntry& a, const FileEntry& b) {
         if (a.thickness != b.thickness) {
@@ -175,16 +191,77 @@ void draw_summary(const char* scanDir,
         return a.events < b.events;
     });
 
-    int colorIndex = 0;
-    TString eventsTitle;
-    if (!entries.empty() && entries.front().events > 0.) {
-        eventsTitle = Form("N=%.0f", entries.front().events);
-        leg1->SetHeader(eventsTitle, "C");
-        leg2->SetHeader(eventsTitle, "C");
-    } else {
-        leg2->SetHeader("", "C");
-    }
+    std::map<TString, std::vector<FileEntry>> entriesByParticle;
     for (const auto& entry : entries) {
+        TString key = entry.particle;
+        if (key.IsNull()) {
+            key = "unknown";
+        }
+        entriesByParticle[key].push_back(entry);
+    }
+
+    for (const auto& particleGroup : entriesByParticle) {
+        const TString particleKey = particleGroup.first;
+        const auto& particleEntries = particleGroup.second;
+        if (particleEntries.empty()) {
+            continue;
+        }
+
+        TString particleText = ParticleLabel(particleKey);
+        TString eventsTitle;
+        if (particleEntries.front().events > 0.) {
+            eventsTitle = Form("N=%.0f", particleEntries.front().events);
+        }
+
+        TString particleTag = particleKey;
+        particleTag.ReplaceAll("+", "plus");
+        particleTag.ReplaceAll("-", "minus");
+        particleTag.ReplaceAll("/", "_");
+
+        TString outPath = outputFile;
+        if (outPath.EndsWith(".root")) {
+            outPath = outPath(0, outPath.Length() - 5);
+        }
+        outPath += "_" + particleTag + ".root";
+
+        TFile* out = TFile::Open(outPath, "RECREATE");
+        if (!out || out->IsZombie()) {
+            printf("Error: cannot create output file %s\n", outPath.Data());
+            continue;
+        }
+
+        TCanvas* c1 = new TCanvas("EdepPrimarySummary_" + particleTag, "EdepPrimary Summary", 900, 700);
+        c1->SetGrid();
+        c1->SetLogy();
+        c1->SetLeftMargin(0.15);
+
+        TCanvas* c2 = new TCanvas("EdepInteractionsSummary_" + particleTag, "EdepInteractions Summary", 900, 700);
+        c2->SetGrid();
+        c2->SetLeftMargin(0.15);
+
+        TLegend* leg1 = new TLegend(0.45, 0.65, 0.78, 0.88);
+        leg1->SetBorderSize(0);
+        leg1->SetFillStyle(0);
+        leg1->SetTextSize(0.045);
+        if (!eventsTitle.IsNull()) {
+            leg1->SetHeader(eventsTitle, "C");
+        }
+
+        TLegend* leg2 = new TLegend(0.45, 0.65, 0.78, 0.88);
+        leg2->SetBorderSize(0);
+        leg2->SetFillStyle(0);
+        leg2->SetTextSize(0.045);
+        if (!eventsTitle.IsNull()) {
+            leg2->SetHeader(eventsTitle, "C");
+        }
+
+        bool firstPrimary = true;
+        bool firstSteps = true;
+        int colorIndex = 0;
+        std::map<double, std::vector<std::pair<double, double>>> fracByEnergy;
+        std::map<double, std::vector<std::pair<double, double>>> mpvByEnergy;
+
+        for (const auto& entry : particleEntries) {
         const auto& filePath = entry.path;
         TFile* f = TFile::Open(filePath, "READ");
         if (!f || f->IsZombie()) {
@@ -218,8 +295,31 @@ void draw_summary(const char* scanDir,
         hPrimaryClone->SetLineWidth(5);
         hStepsClone->SetLineWidth(4);
 
+        // Fraction of events with non-zero interactions (steps > 0)
+        const int stepsBins = hSteps->GetNbinsX();
+        const double totalStepsEvents = hSteps->Integral(1, stepsBins);
+        const double zeroStepsEvents = hSteps->GetBinContent(1);
+        const double fracNonZero =
+            (totalStepsEvents > 0.) ? (totalStepsEvents - zeroStepsEvents) / totalStepsEvents : 0.;
+        fracByEnergy[entry.energy].push_back({entry.thickness, fracNonZero});
+
+        // MPV of Landau fit to energy deposition histogram
+        double mpv = std::nan("");
+        if (hPrimary->GetEntries() > 0) {
+            TF1 landauFit("landauFit", "landau", hPrimary->GetXaxis()->GetXmin(),
+                          hPrimary->GetXaxis()->GetXmax());
+            int fitStatus = hPrimary->Fit(&landauFit, "Q0");
+            if (fitStatus == 0) {
+                mpv = landauFit.GetParameter(1);
+            }
+        }
+        if (!std::isnan(mpv)) {
+            mpvByEnergy[entry.energy].push_back({entry.thickness, mpv});
+        }
+
         c1->cd();
         if (firstPrimary) {
+            hPrimaryClone->SetTitle(Form("EdepPrimary Summary (%s)", particleText.Data()));
             hPrimaryClone->GetYaxis()->SetTitleOffset(1.35);
             hPrimaryClone->GetYaxis()->SetLabelSize(0.035);
             hPrimaryClone->Draw("HIST");
@@ -231,7 +331,7 @@ void draw_summary(const char* scanDir,
 
         c2->cd();
         if (firstSteps) {
-            hStepsClone->SetTitle("EdepInteractions Summary (e^{-})");
+            hStepsClone->SetTitle(Form("EdepInteractions Summary (%s)", particleText.Data()));
             hStepsClone->GetYaxis()->SetTitleOffset(1.35);
             hStepsClone->GetYaxis()->SetLabelSize(0.035);
             hStepsClone->Draw("HIST");
@@ -244,17 +344,103 @@ void draw_summary(const char* scanDir,
         f->Close();
     }
 
-    c1->cd();
-    leg1->Draw();
-    c1->Update();
+        c1->cd();
+        leg1->Draw();
+        c1->Update();
 
-    c2->cd();
-    leg2->Draw();
-    c2->Update();
+        c2->cd();
+        leg2->Draw();
+        c2->Update();
 
-    out->cd();
-    c1->Write("EdepPrimarySummary", TObject::kOverwrite);
-    c2->Write("EdepInteractionsSummary", TObject::kOverwrite);
-    out->Write("", TObject::kOverwrite);
-    out->Close();
+        // Summary graph: fraction of events with non-zero steps
+        TCanvas* c3 = new TCanvas("NonZeroStepsSummary_" + particleTag, "Non-zero steps fraction", 900, 700);
+        c3->SetGrid();
+        c3->SetLeftMargin(0.15);
+        TMultiGraph* mgFrac = new TMultiGraph();
+        TLegend* leg3 = new TLegend(0.45, 0.65, 0.78, 0.88);
+        leg3->SetBorderSize(0);
+        leg3->SetFillStyle(0);
+        leg3->SetTextSize(0.045);
+        if (!eventsTitle.IsNull()) {
+            leg3->SetHeader(eventsTitle, "C");
+        }
+
+        int fracColorIndex = 0;
+        for (const auto& kv : fracByEnergy) {
+            const auto& points = kv.second;
+            if (points.empty()) {
+                continue;
+            }
+            TGraph* g = new TGraph(static_cast<int>(points.size()));
+            for (int i = 0; i < static_cast<int>(points.size()); ++i) {
+                g->SetPoint(i, points[i].first, points[i].second);
+            }
+            int color = colors[fracColorIndex % nColors];
+            fracColorIndex++;
+            g->SetLineColor(color);
+            g->SetMarkerColor(color);
+            g->SetMarkerStyle(20);
+            g->SetLineWidth(3);
+            mgFrac->Add(g, "LP");
+            leg3->AddEntry(g, EnergyLabel(kv.first), "lp");
+        }
+        mgFrac->SetTitle(Form("Non-zero steps fraction (%s)", particleText.Data()));
+        mgFrac->Draw("A");
+        mgFrac->GetXaxis()->SetTitle("Sample thickness (nm)");
+        mgFrac->GetYaxis()->SetTitle("Fraction of events with non-zero steps");
+        mgFrac->GetYaxis()->SetTitleOffset(1.35);
+        mgFrac->GetYaxis()->SetLabelSize(0.035);
+        mgFrac->GetYaxis()->SetRangeUser(0.0, 1.0);
+        leg3->Draw();
+        c3->Update();
+
+        // Summary graph: MPV of Landau fit to EdepPrimary
+        TCanvas* c4 = new TCanvas("EdepPrimaryMPVSummary_" + particleTag, "EdepPrimary MPV (Landau)", 900, 700);
+        c4->SetGrid();
+        c4->SetLeftMargin(0.15);
+        TMultiGraph* mgMpv = new TMultiGraph();
+        TLegend* leg4 = new TLegend(0.45, 0.65, 0.78, 0.88);
+        leg4->SetBorderSize(0);
+        leg4->SetFillStyle(0);
+        leg4->SetTextSize(0.045);
+        if (!eventsTitle.IsNull()) {
+            leg4->SetHeader(eventsTitle, "C");
+        }
+
+        int mpvColorIndex = 0;
+        for (const auto& kv : mpvByEnergy) {
+            const auto& points = kv.second;
+            if (points.empty()) {
+                continue;
+            }
+            TGraph* g = new TGraph(static_cast<int>(points.size()));
+            for (int i = 0; i < static_cast<int>(points.size()); ++i) {
+                g->SetPoint(i, points[i].first, points[i].second);
+            }
+            int color = colors[mpvColorIndex % nColors];
+            mpvColorIndex++;
+            g->SetLineColor(color);
+            g->SetMarkerColor(color);
+            g->SetMarkerStyle(21);
+            g->SetLineWidth(3);
+            mgMpv->Add(g, "LP");
+            leg4->AddEntry(g, EnergyLabel(kv.first), "lp");
+        }
+        mgMpv->SetTitle(Form("EdepPrimary MPV (Landau) (%s)", particleText.Data()));
+        mgMpv->Draw("A");
+        mgMpv->GetXaxis()->SetTitle("Sample thickness (nm)");
+        mgMpv->GetYaxis()->SetTitle("MPV of Landau fit (eV)");
+        mgMpv->GetYaxis()->SetTitleOffset(1.35);
+        mgMpv->GetYaxis()->SetLabelSize(0.035);
+        leg4->Draw();
+        c4->Update();
+
+        out->cd();
+        c1->Write("EdepPrimarySummary_" + particleTag, TObject::kOverwrite);
+        c2->Write("EdepInteractionsSummary_" + particleTag, TObject::kOverwrite);
+        c3->Write("NonZeroStepsSummary_" + particleTag, TObject::kOverwrite);
+        c4->Write("EdepPrimaryMPVSummary_" + particleTag, TObject::kOverwrite);
+        out->Write("", TObject::kOverwrite);
+        out->Close();
+    }
 }

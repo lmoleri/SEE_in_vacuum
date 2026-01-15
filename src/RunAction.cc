@@ -14,6 +14,7 @@ RunAction::RunAction()
       fNSecondaryElectrons(0),
       fMinNonZeroEdep(-1.),
       fPrimaryEnergy(0.),
+      fPrimaryParticleName("e-"),
       fSampleThickness(0.),
       fOutputTag("SEE_in_vacuum")
 {
@@ -50,6 +51,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtuple("RunMeta", "Run metadata");
         analysisManager->CreateNtupleDColumn("primaryEnergyMeV");
         analysisManager->CreateNtupleDColumn("sampleThicknessNm");
+        analysisManager->CreateNtupleSColumn("primaryParticle");
         analysisManager->FinishNtuple();
         metaCreated = true;
     }
@@ -136,6 +138,7 @@ void RunAction::EndOfRunAction(const G4Run* run)
     if (analysisManager) {
         analysisManager->FillNtupleDColumn(0, fPrimaryEnergy / MeV);
         analysisManager->FillNtupleDColumn(1, fSampleThickness / nm);
+        analysisManager->FillNtupleSColumn(2, fPrimaryParticleName);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -166,6 +169,11 @@ void RunAction::UpdateMinNonZeroEdep(G4double edep)
 void RunAction::SetPrimaryEnergy(G4double energy)
 {
     fPrimaryEnergy = energy;
+}
+
+void RunAction::SetPrimaryParticleName(const G4String& name)
+{
+    fPrimaryParticleName = name;
 }
 
 void RunAction::SetSampleThickness(G4double thickness)

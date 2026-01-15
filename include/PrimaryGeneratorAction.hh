@@ -18,6 +18,7 @@ public:
 
     virtual void GeneratePrimaries(G4Event*);
 
+    void SetParticleName(const G4String& name);
     void SetEnergy(G4double energy) { fParticleGun->SetParticleEnergy(energy); }
     void SetPosition(G4ThreeVector pos) { fParticleGun->SetParticlePosition(pos); }
     void SetDirection(G4ThreeVector dir) { fParticleGun->SetParticleMomentumDirection(dir); }

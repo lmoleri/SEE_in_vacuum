@@ -184,6 +184,10 @@ int main(int argc, char** argv)
         double events = 100000;
         ParseNumber(content, "events", events);
         std::string outputDir = ParseString(content, "output_dir");
+        std::string primaryParticle = ParseString(content, "primary_particle");
+        if (primaryParticle.empty()) {
+            primaryParticle = "e-";
+        }
 
         if (thicknessNm.empty() || energiesMeV.empty()) {
             G4cerr << "Error: JSON must include arrays for sample_thickness_nm and primary_energy_MeV."
@@ -198,12 +202,22 @@ int main(int argc, char** argv)
             delete runManager;
             return 1;
         }
+        auto* primaryGenerator = actions->GetPrimaryGenerator();
+        if (!primaryGenerator) {
+            G4cerr << "Error: PrimaryGeneratorAction not available for scan." << G4endl;
+            delete runManager;
+            return 1;
+        }
+
+        primaryGenerator->SetParticleName(primaryParticle);
+        runAction->SetPrimaryParticleName(primaryParticle);
 
         std::string autoDir;
         if (outputDir.empty()) {
             std::string thickList = JoinParams(thicknessNm, "nm");
             std::string energyList = JoinParams(energiesMeV, "MeV");
-            autoDir = "scan_thick" + thickList + "_energy" + energyList +
+            autoDir = "scan_thick" + thickList + "_particle" + primaryParticle +
+                      "_energy" + energyList +
                       "_events" + FormatParam(events);
         }
         std::filesystem::path baseDir = std::filesystem::current_path();
@@ -235,7 +249,8 @@ int main(int argc, char** argv)
                 UImanager->ApplyCommand(energyCmd);
 
                 std::string tag = outputDir + "/SEE_in_vacuum_thick" +
-                                  FormatParam(thickness) + "nm_energy" +
+                                  FormatParam(thickness) + "nm_particle" +
+                                  primaryParticle + "_energy" +
                                   FormatParam(energy) + "MeV_events" +
                                   FormatParam(events);
                 runAction->SetOutputTag(tag.c_str());

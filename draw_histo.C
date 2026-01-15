@@ -30,12 +30,26 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     // Read run metadata (if present)
     double primaryEnergyMeV = -1.0;
     double sampleThicknessNm = -1.0;
+    char primaryParticle[64] = "";
     TTree* meta = (TTree*)f->Get("RunMeta");
     if (meta) {
         meta->SetBranchAddress("primaryEnergyMeV", &primaryEnergyMeV);
         meta->SetBranchAddress("sampleThicknessNm", &sampleThicknessNm);
+        if (meta->GetBranch("primaryParticle")) {
+            meta->SetBranchAddress("primaryParticle", primaryParticle);
+        }
         meta->GetEntry(0);
     }
+
+    auto particleLabel = [](const std::string& name) {
+        if (name == "e-" || name == "e") return std::string("e^{-}");
+        if (name == "e+") return std::string("e^{+}");
+        if (name == "mu-" || name == "mu") return std::string("#mu^{-}");
+        if (name == "mu+") return std::string("#mu^{+}");
+        if (!name.empty()) return name;
+        return std::string("e^{-}");
+    };
+    std::string particleText = particleLabel(primaryParticle);
 
     // Create a canvas
     TCanvas* c1 = new TCanvas("c1", "Energy Deposition", 800, 600);
@@ -60,6 +74,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     h->SetLineWidth(3);
 
     // Draw histogram with the normal default style
+    h->SetTitle(Form("Primary %s energy deposition in Al_{2}O_{3}", particleText.c_str()));
     h->Draw("HIST");
 
     // Add info text
@@ -67,9 +82,10 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     info1.SetNDC(true);
     info1.SetTextSize(0.03);
     if (primaryEnergyMeV > 0.) {
-        info1.DrawLatex(0.45, 0.85, Form("Primary e^{-} energy: %.3f MeV", primaryEnergyMeV));
+        info1.DrawLatex(0.45, 0.85,
+                        Form("Primary %s energy: %.3f MeV", particleText.c_str(), primaryEnergyMeV));
     } else {
-        info1.DrawLatex(0.45, 0.85, "Primary e^{-} energy: n/a");
+        info1.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
     }
     if (sampleThicknessNm > 0.) {
         info1.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
@@ -96,6 +112,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     hSteps->SetLineColor(kMagenta + 1);
     hSteps->SetLineWidth(3);
 
+    hSteps->SetTitle(Form("Energy-depositing steps per event (%s)", particleText.c_str()));
     hSteps->Draw("HIST");
 
     // Add info text
@@ -103,9 +120,10 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     info2.SetNDC(true);
     info2.SetTextSize(0.03);
     if (primaryEnergyMeV > 0.) {
-        info2.DrawLatex(0.45, 0.85, Form("Primary e^{-} energy: %.3f MeV", primaryEnergyMeV));
+        info2.DrawLatex(0.45, 0.85,
+                        Form("Primary %s energy: %.3f MeV", particleText.c_str(), primaryEnergyMeV));
     } else {
-        info2.DrawLatex(0.45, 0.85, "Primary e^{-} energy: n/a");
+        info2.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
     }
     if (sampleThicknessNm > 0.) {
         info2.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));

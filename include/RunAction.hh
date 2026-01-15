@@ -24,6 +24,7 @@ public:
     void UpdateMinNonZeroEdep(G4double edep);
 
     void SetPrimaryEnergy(G4double energy);
+    void SetPrimaryParticleName(const G4String& name);
     void SetSampleThickness(G4double thickness);
     void SetOutputTag(const G4String& tag);
 
@@ -32,6 +33,7 @@ private:
     G4int fNSecondaryElectrons;
     G4double fMinNonZeroEdep;
     G4double fPrimaryEnergy;
+    G4String fPrimaryParticleName;
     G4double fSampleThickness;
     G4String fOutputTag;
 };
