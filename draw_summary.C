@@ -111,6 +111,12 @@ TString EnergyLabel(double energy) {
     if (energy <= 0.) {
         return "E=n/a";
     }
+    if (energy < 1e-3) {
+        return Form("E=%.0f eV", energy * 1.0e6);
+    }
+    if (energy < 1.0) {
+        return Form("E=%.3g keV", energy * 1.0e3);
+    }
     return Form("E=%.3g MeV", energy);
 }
 
@@ -239,18 +245,18 @@ void draw_summary(const char* scanDir,
         c2->SetGrid();
         c2->SetLeftMargin(0.15);
 
-        TLegend* leg1 = new TLegend(0.45, 0.65, 0.78, 0.88);
+    TLegend* leg1 = new TLegend(0.45, 0.65, 0.78, 0.88);
         leg1->SetBorderSize(0);
         leg1->SetFillStyle(0);
-        leg1->SetTextSize(0.045);
+    leg1->SetTextSize(0.03);
         if (!eventsTitle.IsNull()) {
             leg1->SetHeader(eventsTitle, "C");
         }
 
-        TLegend* leg2 = new TLegend(0.45, 0.65, 0.78, 0.88);
+    TLegend* leg2 = new TLegend(0.45, 0.65, 0.78, 0.88);
         leg2->SetBorderSize(0);
         leg2->SetFillStyle(0);
-        leg2->SetTextSize(0.045);
+    leg2->SetTextSize(0.03);
         if (!eventsTitle.IsNull()) {
             leg2->SetHeader(eventsTitle, "C");
         }
@@ -260,6 +266,13 @@ void draw_summary(const char* scanDir,
         int colorIndex = 0;
         std::map<double, std::vector<std::pair<double, double>>> fracByEnergy;
         std::map<double, std::vector<std::pair<double, double>>> mpvByEnergy;
+
+        double maxPrimaryEnergyMeV = 0.0;
+        for (const auto& entry : particleEntries) {
+            if (entry.energy > maxPrimaryEnergyMeV) {
+                maxPrimaryEnergyMeV = entry.energy;
+            }
+        }
 
         for (const auto& entry : particleEntries) {
         const auto& filePath = entry.path;
@@ -322,6 +335,9 @@ void draw_summary(const char* scanDir,
             hPrimaryClone->SetTitle(Form("EdepPrimary Summary (%s)", particleText.Data()));
             hPrimaryClone->GetYaxis()->SetTitleOffset(1.35);
             hPrimaryClone->GetYaxis()->SetLabelSize(0.035);
+            if (maxPrimaryEnergyMeV > 0.) {
+                hPrimaryClone->GetXaxis()->SetRangeUser(0.0, maxPrimaryEnergyMeV * 1.0e6);
+            }
             hPrimaryClone->Draw("HIST");
             firstPrimary = false;
         } else {
@@ -360,7 +376,7 @@ void draw_summary(const char* scanDir,
         TLegend* leg3 = new TLegend(0.45, 0.65, 0.78, 0.88);
         leg3->SetBorderSize(0);
         leg3->SetFillStyle(0);
-        leg3->SetTextSize(0.045);
+        leg3->SetTextSize(0.03);
         if (!eventsTitle.IsNull()) {
             leg3->SetHeader(eventsTitle, "C");
         }
@@ -402,7 +418,7 @@ void draw_summary(const char* scanDir,
         TLegend* leg4 = new TLegend(0.45, 0.65, 0.78, 0.88);
         leg4->SetBorderSize(0);
         leg4->SetFillStyle(0);
-        leg4->SetTextSize(0.045);
+        leg4->SetTextSize(0.03);
         if (!eventsTitle.IsNull()) {
             leg4->SetHeader(eventsTitle, "C");
         }

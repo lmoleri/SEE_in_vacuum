@@ -15,6 +15,7 @@
     0.001
   ],
   "primary_particle": "e-",
-  "events": 100000,
-  "output_dir": "results/scan_thick5nm_particlee-_energy100-1000eV_step100eV_events100000"
+  "pai_enabled": true,
+  "events": 10000,
+  "output_dir": "results/scan_thick5nm_particlee-_energy100-1000eV_step100eV_events10000"
 }

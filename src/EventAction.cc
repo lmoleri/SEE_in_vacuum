@@ -34,8 +34,11 @@ void EventAction::EndOfEventAction(const G4Event* event)
     // Convert from internal units (keV) to eV for display
     analysisManager->FillH1(0, fEdepPrimary / eV);
 
-    // Histogram ID 1: number of microscopic energy-depositing steps per event
-    analysisManager->FillH1(1, static_cast<G4double>(fNMicroscopicEdep));
+    // Histogram ID 2: number of microscopic energy-depositing steps per event
+    analysisManager->FillH1(2, static_cast<G4double>(fNMicroscopicEdep));
+
+    // Histogram ID 0 (H2): primary edep vs step count per event
+    analysisManager->FillH2(0, fEdepPrimary / eV, static_cast<G4double>(fNMicroscopicEdep));
 
     if (fRunAction && fEdepPrimary > 0.) {
         fRunAction->UpdateMinNonZeroEdep(fEdepPrimary);
@@ -51,4 +54,3 @@ void EventAction::AddEdepInteraction()
 {
     ++fNMicroscopicEdep;
 }
-

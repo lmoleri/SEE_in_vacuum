@@ -8,15 +8,19 @@
 
 #include "DetectorConstruction.hh"
 
+#include <cmath>
+
 RunAction::RunAction()
     : G4UserRunAction(),
       fNPrimaryElectrons(0),
       fNSecondaryElectrons(0),
       fMinNonZeroEdep(-1.),
       fPrimaryEnergy(0.),
+      fMaxPrimaryEnergy(0.),
       fPrimaryParticleName("e-"),
       fSampleThickness(0.),
-      fOutputTag("SEE_in_vacuum")
+      fOutputTag("SEE_in_vacuum"),
+      fPaiEnabled(false)
 {
 }
 
@@ -51,6 +55,8 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtuple("RunMeta", "Run metadata");
         analysisManager->CreateNtupleDColumn("primaryEnergyMeV");
         analysisManager->CreateNtupleDColumn("sampleThicknessNm");
+        analysisManager->CreateNtupleDColumn("maxPrimaryEnergyMeV");
+        analysisManager->CreateNtupleIColumn("paiEnabled");
         analysisManager->CreateNtupleSColumn("primaryParticle");
         analysisManager->FinishNtuple();
         metaCreated = true;
@@ -64,17 +70,39 @@ void RunAction::BeginOfRunAction(const G4Run*)
         // Based on typical energy deposition: mean ~6 eV, RMS ~29 eV
         // Use range 0-200 eV with fine binning for better resolution
         // Note: Values will be filled in eV units (converted in EventAction)
+        G4double maxEnergy = fMaxPrimaryEnergy;
+        if (maxEnergy <= 0.) {
+            maxEnergy = fPrimaryEnergy;
+        }
+        if (maxEnergy <= 0.) {
+            maxEnergy = 200. * eV;
+        }
+        const G4int primaryBins =
+            std::max(1, static_cast<G4int>(std::ceil(maxEnergy / eV)));
+
         G4int histoId = analysisManager->CreateH1(
             "EdepPrimary",
             "Primary e^{-} energy deposition in Al_{2}O_{3}",
-            200,   // number of bins (1 eV per bin for good resolution)
+            primaryBins,   // ~1 eV per bin across scan max energy
             0.,    // Edep min (eV)
-            200.   // Edep max (eV, covers mean + ~7*RMS)
+            maxEnergy / eV   // Edep max (eV)
         );
 
         // Set axis labels explicitly (X-axis in eV units)
         analysisManager->SetH1XAxisTitle(histoId, "Energy deposition (eV)");
         analysisManager->SetH1YAxisTitle(histoId, "Number of events");
+
+        // Create a 1D histogram for energy deposited per step in Al2O3
+        // ID 2: EdepStep
+        G4int stepEdepId = analysisManager->CreateH1(
+            "EdepStep",
+            "Energy deposition per step in Al_{2}O_{3}",
+            100,  // 0.5 eV bins over 0-50 eV
+            0.,
+            50.
+        );
+        analysisManager->SetH1XAxisTitle(stepEdepId, "Energy deposition per step (eV)");
+        analysisManager->SetH1YAxisTitle(stepEdepId, "Number of steps");
 
         // Create a 1D histogram for the number of microscopic energy-depositing
         // steps in Al2O3 per event
@@ -88,6 +116,33 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         analysisManager->SetH1XAxisTitle(stepsHistoId, "Energy-depositing steps per event");
         analysisManager->SetH1YAxisTitle(stepsHistoId, "Number of events");
+
+        // Create a 1D histogram for PAI electron-ionisation energy transfers
+        // ID 3: PAITransfer
+        G4int paiTransferId = analysisManager->CreateH1(
+            "PAITransfer",
+            "PAI energy transfer per step in Al_{2}O_{3}",
+            200,  // 0.25 eV bins over 0-50 eV
+            0.,
+            50.
+        );
+        analysisManager->SetH1XAxisTitle(paiTransferId, "Energy transfer (eV)");
+        analysisManager->SetH1YAxisTitle(paiTransferId, "Number of PAI steps");
+
+        // Create a 2D histogram: event edep vs number of steps in Al2O3
+        // ID 0 for H2: EdepPrimaryVsSteps
+        G4int edepVsStepsId = analysisManager->CreateH2(
+            "EdepPrimaryVsSteps",
+            "Primary energy deposition vs steps in Al_{2}O_{3}",
+            primaryBins,
+            0.,
+            maxEnergy / eV,
+            20,
+            0.,
+            20.
+        );
+        analysisManager->SetH2XAxisTitle(edepVsStepsId, "Primary energy deposition (eV)");
+        analysisManager->SetH2YAxisTitle(edepVsStepsId, "Energy-depositing steps per event");
 
         histosCreated = true;
     }
@@ -138,7 +193,9 @@ void RunAction::EndOfRunAction(const G4Run* run)
     if (analysisManager) {
         analysisManager->FillNtupleDColumn(0, fPrimaryEnergy / MeV);
         analysisManager->FillNtupleDColumn(1, fSampleThickness / nm);
-        analysisManager->FillNtupleSColumn(2, fPrimaryParticleName);
+        analysisManager->FillNtupleDColumn(2, fMaxPrimaryEnergy / MeV);
+        analysisManager->FillNtupleIColumn(3, fPaiEnabled ? 1 : 0);
+        analysisManager->FillNtupleSColumn(4, fPrimaryParticleName);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -171,6 +228,11 @@ void RunAction::SetPrimaryEnergy(G4double energy)
     fPrimaryEnergy = energy;
 }
 
+void RunAction::SetMaxPrimaryEnergy(G4double energy)
+{
+    fMaxPrimaryEnergy = energy;
+}
+
 void RunAction::SetPrimaryParticleName(const G4String& name)
 {
     fPrimaryParticleName = name;
@@ -184,5 +246,15 @@ void RunAction::SetSampleThickness(G4double thickness)
 void RunAction::SetOutputTag(const G4String& tag)
 {
     fOutputTag = tag;
+}
+
+void RunAction::SetPaiEnabled(G4bool enabled)
+{
+    fPaiEnabled = enabled;
+}
+
+G4bool RunAction::IsPaiEnabled() const
+{
+    return fPaiEnabled;
 }
 

@@ -10,6 +10,8 @@
 #include "G4VPhysicalVolume.hh"
 #include "G4LogicalVolume.hh"
 #include "G4SystemOfUnits.hh"
+#include "G4AnalysisManager.hh"
+#include "G4VProcess.hh"
 
 SteppingAction::SteppingAction(RunAction* runAction, EventAction* eventAction)
     : G4UserSteppingAction(),
@@ -44,6 +46,10 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         const G4double edep = step->GetTotalEnergyDeposit();
         if (edep > 0.) {
             fEventAction->AddEdepInteraction();
+            auto* analysisManager = G4AnalysisManager::Instance();
+            if (analysisManager) {
+                analysisManager->FillH1(1, edep / eV);
+            }
         }
     }
 
@@ -62,6 +68,21 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         const G4double edep = step->GetTotalEnergyDeposit();
         if (edep > 0.) {
             fEventAction->AddPrimaryEdep(edep);
+        }
+    }
+
+    // 1b) Capture per-step energy transfer in Al2O3 when PAI is enabled.
+    //     Use energy deposition on electron steps as proxy for microscopic transfers.
+    if (preName == "Al2O3" && fRunAction && fRunAction->IsPaiEnabled()) {
+        const G4String& pname = particle->GetParticleName();
+        if (pname == "e-") {
+            const G4double edep = step->GetTotalEnergyDeposit();
+            if (edep > 0.) {
+                auto* analysisManager = G4AnalysisManager::Instance();
+                if (analysisManager) {
+                    analysisManager->FillH1(3, edep / eV);
+                }
+            }
         }
     }
 

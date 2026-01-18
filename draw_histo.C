@@ -26,15 +26,34 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         f->Close();
         return;
     }
+
+    TH1* hStep = (TH1*)f->Get("EdepStep");
+    if (!hStep) {
+        cout << "Warning: Histogram EdepStep not found" << endl;
+    }
+
+    TH1* hPai = (TH1*)f->Get("PAITransfer");
+    if (!hPai) {
+        cout << "Warning: Histogram PAITransfer not found" << endl;
+    }
+
+    TH2* hEdepVsSteps = (TH2*)f->Get("EdepPrimaryVsSteps");
+    if (!hEdepVsSteps) {
+        cout << "Warning: Histogram EdepPrimaryVsSteps not found" << endl;
+    }
     
     // Read run metadata (if present)
     double primaryEnergyMeV = -1.0;
     double sampleThicknessNm = -1.0;
+    double maxPrimaryEnergyMeV = -1.0;
     char primaryParticle[64] = "";
     TTree* meta = (TTree*)f->Get("RunMeta");
     if (meta) {
         meta->SetBranchAddress("primaryEnergyMeV", &primaryEnergyMeV);
         meta->SetBranchAddress("sampleThicknessNm", &sampleThicknessNm);
+        if (meta->GetBranch("maxPrimaryEnergyMeV")) {
+            meta->SetBranchAddress("maxPrimaryEnergyMeV", &maxPrimaryEnergyMeV);
+        }
         if (meta->GetBranch("primaryParticle")) {
             meta->SetBranchAddress("primaryParticle", primaryParticle);
         }
@@ -49,6 +68,16 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         if (!name.empty()) return name;
         return std::string("e^{-}");
     };
+    auto energyLabel = [](double energyMeV) -> std::string {
+        if (energyMeV <= 0.) return std::string("n/a");
+        if (energyMeV < 1e-3) {
+            return std::string(Form("%.0f eV", energyMeV * 1.0e6));
+        }
+        if (energyMeV < 1.0) {
+            return std::string(Form("%.3g keV", energyMeV * 1.0e3));
+        }
+        return std::string(Form("%.3g MeV", energyMeV));
+    };
     std::string particleText = particleLabel(primaryParticle);
 
     // Create a canvas
@@ -57,14 +86,6 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     c1->SetLogy();
     c1->SetLeftMargin(0.15);
     
-    // Fold overflow into the last visible bin so the tail is visible
-    int nbins = h->GetNbinsX();
-    h->SetBinContent(nbins, h->GetBinContent(nbins) + h->GetBinContent(nbins + 1));
-    h->SetBinError(nbins, std::sqrt(std::pow(h->GetBinError(nbins), 2) +
-                                    std::pow(h->GetBinError(nbins + 1), 2)));
-    h->SetBinContent(nbins + 1, 0.0);
-    h->SetBinError(nbins + 1, 0.0);
-
     // Format Y axis to avoid label overlap and use scientific notation
     h->GetYaxis()->SetTitleOffset(1.35);
     h->GetYaxis()->SetLabelSize(0.035);
@@ -75,6 +96,10 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
 
     // Draw histogram with the normal default style
     h->SetTitle(Form("Primary %s energy deposition in Al_{2}O_{3}", particleText.c_str()));
+    const double xMaxEv = h->GetXaxis()->GetXmax();
+    if (xMaxEv > 0.) {
+        h->GetXaxis()->SetRangeUser(0.0, xMaxEv);
+    }
     h->Draw("HIST");
 
     // Add info text
@@ -83,7 +108,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     info1.SetTextSize(0.03);
     if (primaryEnergyMeV > 0.) {
         info1.DrawLatex(0.45, 0.85,
-                        Form("Primary %s energy: %.3f MeV", particleText.c_str(), primaryEnergyMeV));
+                        Form("Primary %s energy: %s", particleText.c_str(),
+                             energyLabel(primaryEnergyMeV).c_str()));
     } else {
         info1.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
     }
@@ -121,7 +147,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     info2.SetTextSize(0.03);
     if (primaryEnergyMeV > 0.) {
         info2.DrawLatex(0.45, 0.85,
-                        Form("Primary %s energy: %.3f MeV", particleText.c_str(), primaryEnergyMeV));
+                        Form("Primary %s energy: %s", particleText.c_str(),
+                             energyLabel(primaryEnergyMeV).c_str()));
     } else {
         info2.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
     }
@@ -136,6 +163,106 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     f->cd();
     c2->Write("EdepInteractionsCanvas", TObject::kOverwrite);
 
-    f->Write("", TObject::kOverwrite);
+    if (hStep) {
+        TCanvas* c3 = new TCanvas("c3", "Energy Deposition per Step", 800, 600);
+        c3->SetGrid();
+        c3->SetLeftMargin(0.15);
+
+        hStep->GetYaxis()->SetTitleOffset(1.35);
+        hStep->GetYaxis()->SetLabelSize(0.035);
+        hStep->SetLineColor(kMagenta + 1);
+        hStep->SetLineWidth(3);
+        hStep->SetTitle(Form("Energy deposition per step (%s)", particleText.c_str()));
+        hStep->Draw("HIST");
+
+        TLatex info3;
+        info3.SetNDC(true);
+        info3.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            info3.DrawLatex(0.45, 0.85,
+                            Form("Primary %s energy: %s", particleText.c_str(),
+                                 energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            info3.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            info3.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            info3.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        c3->Update();
+        c3->Draw();
+        f->cd();
+        c3->Write("EdepStepCanvas", TObject::kOverwrite);
+    }
+
+    if (hPai) {
+        TCanvas* cPai = new TCanvas("cPai", "PAI Energy Transfer per Step", 800, 600);
+        cPai->SetGrid();
+        cPai->SetLeftMargin(0.15);
+
+        hPai->GetYaxis()->SetTitleOffset(1.35);
+        hPai->GetYaxis()->SetLabelSize(0.035);
+        hPai->SetLineColor(kMagenta + 1);
+        hPai->SetLineWidth(3);
+        hPai->SetTitle(Form("PAI energy transfer per step (%s)", particleText.c_str()));
+        hPai->Draw("HIST");
+
+        TLatex infoPai;
+        infoPai.SetNDC(true);
+        infoPai.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            infoPai.DrawLatex(0.45, 0.85,
+                              Form("Primary %s energy: %s", particleText.c_str(),
+                                   energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            infoPai.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            infoPai.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            infoPai.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        cPai->Update();
+        cPai->Draw();
+        f->cd();
+        cPai->Write("PAITransferCanvas", TObject::kOverwrite);
+    }
+
+    if (hEdepVsSteps) {
+        TCanvas* c4 = new TCanvas("c4", "EdepPrimary vs Steps", 800, 600);
+        c4->SetGrid();
+        c4->SetLeftMargin(0.15);
+        c4->SetRightMargin(0.15);
+
+        hEdepVsSteps->SetTitle(Form("Primary edep vs steps (%s)", particleText.c_str()));
+        hEdepVsSteps->GetYaxis()->SetTitleOffset(1.35);
+        hEdepVsSteps->GetYaxis()->SetLabelSize(0.035);
+        hEdepVsSteps->Draw("COLZ");
+
+        TLatex info4;
+        info4.SetNDC(true);
+        info4.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            info4.DrawLatex(0.45, 0.85,
+                            Form("Primary %s energy: %s", particleText.c_str(),
+                                 energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            info4.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            info4.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            info4.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        c4->Update();
+        c4->Draw();
+        f->cd();
+        c4->Write("EdepPrimaryVsStepsCanvas", TObject::kOverwrite);
+    }
+
     f->Close();
 }

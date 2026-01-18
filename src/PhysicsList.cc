@@ -15,7 +15,11 @@
 #include "G4ParticleDefinition.hh"
 #include "G4ProcessManager.hh"
 
+#include <cstdlib>
+#include <string>
+
 PhysicsList::PhysicsList()
+    : fPaiEnabledOverride(-1)
 {
     // Register physics constructors
     RegisterPhysics(new G4EmStandardPhysics_option4());  // Electromagnetic physics
@@ -25,6 +29,11 @@ PhysicsList::PhysicsList()
 
 PhysicsList::~PhysicsList()
 {
+}
+
+void PhysicsList::SetPaiEnabledOverride(G4bool enabled)
+{
+    fPaiEnabledOverride = enabled ? 1 : 0;
 }
 
 void PhysicsList::ConstructProcess()
@@ -38,12 +47,28 @@ void PhysicsList::ConstructProcess()
     // Let the modular physics list construct all standard processes first
     G4VModularPhysicsList::ConstructProcess();
 
+    if (fPaiEnabledOverride == 0) {
+        G4cout << "[PAI] Disabled via config override" << G4endl;
+        return;
+    }
+    if (fPaiEnabledOverride < 0) {
+        const char* disablePaiEnv = std::getenv("SEE_DISABLE_PAI");
+        if (disablePaiEnv) {
+            std::string flag(disablePaiEnv);
+            if (flag == "1" || flag == "true" || flag == "TRUE" || flag == "yes" || flag == "YES") {
+                G4cout << "[PAI] Disabled via SEE_DISABLE_PAI=" << flag << G4endl;
+                return;
+            }
+        }
+    }
+
     // Attach PAI model for electron ionisation in the Al2O3 region
     G4Region* targetRegion =
         G4RegionStore::GetInstance()->GetRegion("Al2O3Region", false);
 
     if (!targetRegion) {
         // Region not defined yet; fall back to default models
+        G4cout << "[PAI] Al2O3Region not found; PAI not applied" << G4endl;
         return;
     }
 
@@ -70,6 +95,11 @@ void PhysicsList::ConstructProcess()
                 auto* paiModel = new G4PAIModel(particle, "PAI_e-_Al2O3");
                 // Highest priority (0) for this region
                 eIoni->AddEmModel(0, paiModel, paiModel, targetRegion);
+                if (fPaiEnabledOverride > 0) {
+                    G4cout << "[PAI] Enabled via config override for e- in Al2O3Region" << G4endl;
+                } else {
+                    G4cout << "[PAI] Enabled for e- in Al2O3Region" << G4endl;
+                }
             }
         }
     }

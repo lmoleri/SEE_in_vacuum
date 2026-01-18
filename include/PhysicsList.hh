@@ -10,11 +10,16 @@ public:
     PhysicsList();
     virtual ~PhysicsList();
 
+    void SetPaiEnabledOverride(G4bool enabled);
+
     // Configure physics processes
     virtual void ConstructProcess() override;
 
     // Set production cuts
     virtual void SetCuts() override;
+
+private:
+    G4int fPaiEnabledOverride;
 };
 
 #endif

@@ -151,17 +151,66 @@ std::string ParseString(const std::string& content, const std::string& key)
     }
     return content.substr(firstQuote + 1, secondQuote - firstQuote - 1);
 }
+
+bool ParseBool(const std::string& content, const std::string& key, bool& out)
+{
+    const std::string searchKey = "\"" + key + "\"";
+    auto keyPos = content.find(searchKey);
+    if (keyPos == std::string::npos) {
+        return false;
+    }
+    auto colon = content.find(':', keyPos);
+    if (colon == std::string::npos) {
+        return false;
+    }
+    auto end = content.find_first_of(",}", colon + 1);
+    if (end == std::string::npos) {
+        end = content.size();
+    }
+    std::string value = content.substr(colon + 1, end - colon - 1);
+    if (value.empty()) {
+        return false;
+    }
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    if (value == "true" || value == "1") {
+        out = true;
+        return true;
+    }
+    if (value == "false" || value == "0") {
+        out = false;
+        return true;
+    }
+    return false;
+}
 }  // namespace
 
 int main(int argc, char** argv)
 {
+    const bool hasArg = (argc != 1);
+    const std::string arg1 = hasArg ? argv[1] : "";
+    const bool isJsonScan = hasArg && EndsWith(arg1, ".json");
+    std::string jsonContent;
+    bool paiOverride = false;
+    bool paiEnabled = true;
+    if (isJsonScan) {
+        jsonContent = StripWhitespace(ReadFile(arg1));
+        if (ParseBool(jsonContent, "pai_enabled", paiEnabled)) {
+            paiOverride = true;
+        }
+    }
+
     // Construct the default run manager
     G4RunManager* runManager = new G4RunManager;
 
     // Set mandatory initialization classes
     auto* detector = new DetectorConstruction();
     runManager->SetUserInitialization(detector);
-    runManager->SetUserInitialization(new PhysicsList());
+    auto* physicsList = new PhysicsList();
+    if (paiOverride) {
+        physicsList->SetPaiEnabledOverride(paiEnabled);
+    }
+    runManager->SetUserInitialization(physicsList);
     auto* actions = new ActionInitialization();
     runManager->SetUserInitialization(actions);
 
@@ -171,10 +220,6 @@ int main(int argc, char** argv)
     // Get the pointer to the User Interface manager
     G4UImanager* UImanager = G4UImanager::GetUIpointer();
 
-    const bool hasArg = (argc != 1);
-    const std::string arg1 = hasArg ? argv[1] : "";
-    const bool isJsonScan = hasArg && EndsWith(arg1, ".json");
-
     // Initialize visualization (only for interactive or macro runs)
     G4VisManager* visManager = nullptr;
     if (!isJsonScan) {
@@ -183,7 +228,7 @@ int main(int argc, char** argv)
     }
 
     if (isJsonScan) {
-        std::string content = StripWhitespace(ReadFile(arg1));
+        std::string content = jsonContent;
         auto thicknessNm = ParseArray(content, "sample_thickness_nm");
         auto energiesMeV = ParseArray(content, "primary_energy_MeV");
         double events = 100000;
@@ -216,6 +261,11 @@ int main(int argc, char** argv)
 
         primaryGenerator->SetParticleName(primaryParticle);
         runAction->SetPrimaryParticleName(primaryParticle);
+        runAction->SetPaiEnabled(paiOverride ? paiEnabled : true);
+        if (!energiesMeV.empty()) {
+            const auto maxEnergy = *std::max_element(energiesMeV.begin(), energiesMeV.end());
+            runAction->SetMaxPrimaryEnergy(maxEnergy * MeV);
+        }
 
         std::string autoDir;
         if (outputDir.empty()) {

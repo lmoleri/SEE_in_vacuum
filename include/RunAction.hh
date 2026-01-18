@@ -24,18 +24,23 @@ public:
     void UpdateMinNonZeroEdep(G4double edep);
 
     void SetPrimaryEnergy(G4double energy);
+    void SetMaxPrimaryEnergy(G4double energy);
     void SetPrimaryParticleName(const G4String& name);
     void SetSampleThickness(G4double thickness);
     void SetOutputTag(const G4String& tag);
+    void SetPaiEnabled(G4bool enabled);
+    G4bool IsPaiEnabled() const;
 
 private:
     G4int fNPrimaryElectrons;
     G4int fNSecondaryElectrons;
     G4double fMinNonZeroEdep;
     G4double fPrimaryEnergy;
+    G4double fMaxPrimaryEnergy;
     G4String fPrimaryParticleName;
     G4double fSampleThickness;
     G4String fOutputTag;
+    G4bool fPaiEnabled;
 };
 
 #endif
