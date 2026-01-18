@@ -16,13 +16,16 @@
 /vis/scene/endOfEventAction accumulate
 
 # Add axes
-/vis/scene/add/axes 0 0 0 100 nm
+/vis/scene/add/axes 0 0 0 50 nm
 
 # Set style
 /vis/viewer/set/style surface
 
 # Set background color
 /vis/viewer/set/background white
+
+# Slight zoom to frame thin target
+/vis/viewer/zoom 1.2
 
 # Refresh
 /vis/viewer/refresh

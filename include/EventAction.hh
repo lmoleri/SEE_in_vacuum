@@ -22,11 +22,21 @@ public:
 
     // Count microscopic energy deposition interactions in Al2O3 per event
     void AddEdepInteraction();
+    void UpdatePrimaryResidualEnergy(G4double energy);
+    void UpdatePrimaryEndVolume(const G4String& volumeName);
+    void UpdatePrimaryLastVolume(const G4String& volumeName);
+    void UpdatePrimaryLastProcess(const G4String& processName);
+    void UpdatePrimaryStopStatus(G4int status);
 
 private:
     RunAction* fRunAction;
     G4double fEdepPrimary; // total primary e- energy deposited in Al2O3 for this event
     G4int fNMicroscopicEdep; // number of energy-depositing steps in Al2O3 for this event
+    G4double fPrimaryResidualEnergy;
+    G4int fPrimaryEndLocation;
+    G4int fPrimaryLastLocation;
+    G4String fPrimaryLastProcess;
+    G4int fPrimaryStopStatus;
 };
 
 #endif

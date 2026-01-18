@@ -37,9 +37,39 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         cout << "Warning: Histogram PAITransfer not found" << endl;
     }
 
+    TH1* hResidual = (TH1*)f->Get("PrimaryResidualEnergy");
+    if (!hResidual) {
+        cout << "Warning: Histogram PrimaryResidualEnergy not found" << endl;
+    }
+
+    TH1* hEndVol = (TH1*)f->Get("PrimaryEndVolume");
+    if (!hEndVol) {
+        cout << "Warning: Histogram PrimaryEndVolume not found" << endl;
+    }
+
+    TH1* hStepLen = (TH1*)f->Get("StepLengthAl2O3");
+    if (!hStepLen) {
+        cout << "Warning: Histogram StepLengthAl2O3 not found" << endl;
+    }
+
     TH2* hEdepVsSteps = (TH2*)f->Get("EdepPrimaryVsSteps");
     if (!hEdepVsSteps) {
         cout << "Warning: Histogram EdepPrimaryVsSteps not found" << endl;
+    }
+
+    TH2* hResVsEnd = (TH2*)f->Get("ResidualEnergyVsEndVolume");
+    if (!hResVsEnd) {
+        cout << "Warning: Histogram ResidualEnergyVsEndVolume not found" << endl;
+    }
+
+    TH2* hResVsProc = (TH2*)f->Get("ResidualEnergyVsLastProcess");
+    if (!hResVsProc) {
+        cout << "Warning: Histogram ResidualEnergyVsLastProcess not found" << endl;
+    }
+
+    TH2* hResVsStop = (TH2*)f->Get("ResidualEnergyVsStopStatus");
+    if (!hResVsStop) {
+        cout << "Warning: Histogram ResidualEnergyVsStopStatus not found" << endl;
     }
     
     // Read run metadata (if present)
@@ -231,6 +261,114 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         cPai->Write("PAITransferCanvas", TObject::kOverwrite);
     }
 
+    if (hResidual) {
+        TCanvas* cRes = new TCanvas("cRes", "Primary Residual Energy", 800, 600);
+        cRes->SetGrid();
+        cRes->SetLeftMargin(0.15);
+
+        hResidual->GetYaxis()->SetTitleOffset(1.35);
+        hResidual->GetYaxis()->SetLabelSize(0.035);
+        hResidual->SetLineColor(kMagenta + 1);
+        hResidual->SetLineWidth(3);
+        hResidual->SetTitle(Form("Primary residual energy (%s)", particleText.c_str()));
+        hResidual->Draw("HIST");
+
+        TLatex infoRes;
+        infoRes.SetNDC(true);
+        infoRes.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            infoRes.DrawLatex(0.45, 0.85,
+                              Form("Primary %s energy: %s", particleText.c_str(),
+                                   energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            infoRes.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            infoRes.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            infoRes.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        cRes->Update();
+        cRes->Draw();
+        f->cd();
+        cRes->Write("PrimaryResidualEnergyCanvas", TObject::kOverwrite);
+    }
+
+    if (hEndVol) {
+        TCanvas* cEnd = new TCanvas("cEnd", "Primary End Volume", 800, 600);
+        cEnd->SetGrid();
+        cEnd->SetLeftMargin(0.15);
+
+        hEndVol->GetYaxis()->SetTitleOffset(1.35);
+        hEndVol->GetYaxis()->SetLabelSize(0.035);
+        hEndVol->SetLineColor(kMagenta + 1);
+        hEndVol->SetLineWidth(3);
+        hEndVol->SetTitle(Form("Primary end volume (%s)", particleText.c_str()));
+        hEndVol->GetXaxis()->SetBinLabel(1, "Unknown");
+        hEndVol->GetXaxis()->SetBinLabel(2, "Al2O3");
+        hEndVol->GetXaxis()->SetBinLabel(3, "World");
+        hEndVol->GetXaxis()->SetBinLabel(4, "OutOfWorld");
+        hEndVol->GetXaxis()->SetBinLabel(5, "Other");
+        hEndVol->LabelsOption("v");
+        hEndVol->Draw("HIST");
+
+        TLatex infoEnd;
+        infoEnd.SetNDC(true);
+        infoEnd.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            infoEnd.DrawLatex(0.45, 0.85,
+                              Form("Primary %s energy: %s", particleText.c_str(),
+                                   energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            infoEnd.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            infoEnd.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            infoEnd.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        cEnd->Update();
+        cEnd->Draw();
+        f->cd();
+        cEnd->Write("PrimaryEndVolumeCanvas", TObject::kOverwrite);
+    }
+
+    if (hStepLen) {
+        TCanvas* cStep = new TCanvas("cStep", "Step Length in Al2O3", 800, 600);
+        cStep->SetGrid();
+        cStep->SetLeftMargin(0.15);
+
+        hStepLen->GetYaxis()->SetTitleOffset(1.35);
+        hStepLen->GetYaxis()->SetLabelSize(0.035);
+        hStepLen->SetLineColor(kMagenta + 1);
+        hStepLen->SetLineWidth(3);
+        hStepLen->SetTitle("Step length in Al_{2}O_{3}");
+        hStepLen->Draw("HIST");
+
+        TLatex infoStep;
+        infoStep.SetNDC(true);
+        infoStep.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            infoStep.DrawLatex(0.45, 0.85,
+                               Form("Primary %s energy: %s", particleText.c_str(),
+                                    energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            infoStep.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            infoStep.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            infoStep.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        cStep->Update();
+        cStep->Draw();
+        f->cd();
+        cStep->Write("StepLengthAl2O3Canvas", TObject::kOverwrite);
+    }
+
     if (hEdepVsSteps) {
         TCanvas* c4 = new TCanvas("c4", "EdepPrimary vs Steps", 800, 600);
         c4->SetGrid();
@@ -262,6 +400,127 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c4->Draw();
         f->cd();
         c4->Write("EdepPrimaryVsStepsCanvas", TObject::kOverwrite);
+    }
+
+    if (hResVsEnd) {
+        TCanvas* c5 = new TCanvas("c5", "Residual Energy vs End Volume", 800, 600);
+        c5->SetGrid();
+        c5->SetLeftMargin(0.15);
+        c5->SetRightMargin(0.18);
+
+        hResVsEnd->SetTitle(Form("Residual energy vs end volume (%s)", particleText.c_str()));
+        hResVsEnd->GetYaxis()->SetTitleOffset(1.35);
+        hResVsEnd->GetYaxis()->SetLabelSize(0.035);
+        hResVsEnd->GetYaxis()->SetBinLabel(1, "Unknown");
+        hResVsEnd->GetYaxis()->SetBinLabel(2, "Al2O3");
+        hResVsEnd->GetYaxis()->SetBinLabel(3, "World");
+        hResVsEnd->GetYaxis()->SetBinLabel(4, "OutOfWorld");
+        hResVsEnd->GetYaxis()->SetBinLabel(5, "Other");
+        hResVsEnd->GetYaxis()->LabelsOption("v");
+        hResVsEnd->Draw("COLZ");
+
+        TLatex info5;
+        info5.SetNDC(true);
+        info5.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            info5.DrawLatex(0.45, 0.85,
+                            Form("Primary %s energy: %s", particleText.c_str(),
+                                 energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            info5.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            info5.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            info5.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        c5->Update();
+        c5->Draw();
+        f->cd();
+        c5->Write("ResidualEnergyVsEndVolumeCanvas", TObject::kOverwrite);
+    }
+
+    if (hResVsProc) {
+        TCanvas* c6 = new TCanvas("c6", "Residual Energy vs Last Process", 800, 600);
+        c6->SetGrid();
+        c6->SetLeftMargin(0.15);
+        c6->SetRightMargin(0.18);
+
+        hResVsProc->SetTitle(Form("Residual energy vs last process (%s)", particleText.c_str()));
+        hResVsProc->GetYaxis()->SetTitleOffset(1.35);
+        hResVsProc->GetYaxis()->SetLabelSize(0.035);
+        hResVsProc->GetYaxis()->SetBinLabel(1, "Unknown");
+        hResVsProc->GetYaxis()->SetBinLabel(2, "Transportation");
+        hResVsProc->GetYaxis()->SetBinLabel(3, "eIoni");
+        hResVsProc->GetYaxis()->SetBinLabel(4, "msc");
+        hResVsProc->GetYaxis()->SetBinLabel(5, "eBrem");
+        hResVsProc->GetYaxis()->SetBinLabel(6, "CoulombScat");
+        hResVsProc->GetYaxis()->SetBinLabel(7, "Other");
+        hResVsProc->GetYaxis()->LabelsOption("v");
+        hResVsProc->Draw("COLZ");
+
+        TLatex info6;
+        info6.SetNDC(true);
+        info6.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            info6.DrawLatex(0.45, 0.85,
+                            Form("Primary %s energy: %s", particleText.c_str(),
+                                 energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            info6.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            info6.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            info6.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        c6->Update();
+        c6->Draw();
+        f->cd();
+        c6->Write("ResidualEnergyVsLastProcessCanvas", TObject::kOverwrite);
+    }
+
+    if (hResVsStop) {
+        TCanvas* c7 = new TCanvas("c7", "Residual Energy vs Stop Status", 800, 600);
+        c7->SetGrid();
+        c7->SetLeftMargin(0.15);
+        c7->SetRightMargin(0.18);
+
+        hResVsStop->SetTitle(Form("Residual energy vs stop status (%s)", particleText.c_str()));
+        hResVsStop->GetYaxis()->SetTitleOffset(1.35);
+        hResVsStop->GetYaxis()->SetLabelSize(0.035);
+        hResVsStop->GetYaxis()->SetBinLabel(1, "Unknown");
+        hResVsStop->GetYaxis()->SetBinLabel(2, "fAlive");
+        hResVsStop->GetYaxis()->SetBinLabel(3, "fStopButAlive");
+        hResVsStop->GetYaxis()->SetBinLabel(4, "fStopAndKill");
+        hResVsStop->GetYaxis()->SetBinLabel(5, "fKillTrackAndSecondaries");
+        hResVsStop->GetYaxis()->SetBinLabel(6, "fSuspend");
+        hResVsStop->GetYaxis()->SetBinLabel(7, "fPostponeToNextEvent");
+        hResVsStop->GetYaxis()->LabelsOption("v");
+        hResVsStop->Draw("COLZ");
+
+        TLatex info7;
+        info7.SetNDC(true);
+        info7.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            info7.DrawLatex(0.45, 0.85,
+                            Form("Primary %s energy: %s", particleText.c_str(),
+                                 energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            info7.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            info7.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            info7.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+
+        c7->Update();
+        c7->Draw();
+        f->cd();
+        c7->Write("ResidualEnergyVsStopStatusCanvas", TObject::kOverwrite);
     }
 
     f->Close();

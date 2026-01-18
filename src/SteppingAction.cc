@@ -53,12 +53,49 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         }
     }
 
+    // Record step length in Al2O3 for diagnostics
+    if (preName == "Al2O3") {
+        const G4double stepLen = step->GetStepLength();
+        if (stepLen > 0.) {
+            auto* analysisManager = G4AnalysisManager::Instance();
+            if (analysisManager) {
+                analysisManager->FillH1(6, stepLen / nm);
+            }
+        }
+    }
+
     const G4Track* track    = step->GetTrack();
     const auto*    particle = track->GetParticleDefinition();
 
     // We are interested only in electrons for the metrics below
     if (particle->GetParticleName() != "e-") {
         return;
+    }
+
+    // Track primary e- residual energy at the end of the event
+    if (fEventAction && track->GetTrackID() == 1 && track->GetParentID() == 0) {
+        fEventAction->UpdatePrimaryResidualEnergy(postPoint->GetKineticEnergy());
+        const auto* postVol = postPoint->GetPhysicalVolume();
+        if (postVol) {
+            fEventAction->UpdatePrimaryLastVolume(postVol->GetName());
+        } else {
+            fEventAction->UpdatePrimaryLastVolume("OutOfWorld");
+        }
+        const auto* proc = postPoint->GetProcessDefinedStep();
+        if (proc) {
+            fEventAction->UpdatePrimaryLastProcess(proc->GetProcessName());
+        } else {
+            fEventAction->UpdatePrimaryLastProcess("Unknown");
+        }
+        fEventAction->UpdatePrimaryStopStatus(static_cast<G4int>(track->GetTrackStatus()));
+        if (track->GetTrackStatus() == fStopAndKill) {
+            const auto* endVol = postPoint->GetPhysicalVolume();
+            if (endVol) {
+                fEventAction->UpdatePrimaryEndVolume(endVol->GetName());
+            } else {
+                fEventAction->UpdatePrimaryEndVolume("OutOfWorld");
+            }
+        }
     }
 
     // 1) Accumulate primary electron energy deposition in Al2O3

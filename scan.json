@@ -14,6 +14,7 @@
     0.0009,
     0.001
   ],
+  "em_model": "PAI",
   "primary_particle": "e-",
   "pai_enabled": true,
   "events": 10000,

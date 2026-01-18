@@ -65,13 +65,22 @@ Example `scan.json`:
 {
   "sample_thickness_nm": [10, 20, 50],
   "primary_energy_MeV": [0.5, 1.0, 2.0],
+  "em_model": "PAI",
   "primary_particle": "e-",
+  "pai_enabled": true,
   "events": 100000,
   "output_dir": "results/scan_thick10-20-50nm_particlee-_energy0p5-1-2MeV_events100000"
 }
 ```
 
 `primary_particle` can be `"e-"` or `"mu-"` (default is `"e-"`).
+
+`em_model` can be:
+- `"PAI"` (default): uses `G4EmStandardPhysics_option4` + PAI in Al2O3
+- `"G4EmLivermorePhysics"` (or `"livermore"`)
+- `"G4EmPenelopePhysics"` (or `"penelope"`)
+
+`pai_enabled` is only used when `em_model` is `"PAI"`.
 
 Output files are created inside `output_dir` for each combination. When `output_dir`
 is relative, it is resolved from the project root (not `build/`), e.g.:
@@ -82,8 +91,17 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
 - `SEE_in_vacuum.root` (ROOT file with histograms and canvases)
   - `EdepPrimary`: primary particle energy deposition in Al2O3 (eV)
   - `EdepInteractions`: number of energy-depositing steps in Al2O3 per event
-  - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`, and `primaryParticle`
-  - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`: canvases saved with annotations
+  - `EdepStep`: energy deposition per step in Al2O3 (eV)
+  - `PAITransfer`: per-step energy transfer proxy in Al2O3 (eV)
+  - `PrimaryResidualEnergy`: primary residual kinetic energy at end of event (eV)
+  - `PrimaryEndVolume`: end volume category (Al2O3/World/OutOfWorld/Other)
+  - `StepLengthAl2O3`: step length distribution in Al2O3 (nm)
+  - `ResidualEnergyVsEndVolume`: 2D residual energy vs end volume category
+  - `ResidualEnergyVsLastProcess`: 2D residual energy vs last process category
+  - `ResidualEnergyVsStopStatus`: 2D residual energy vs stop status category
+  - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`,
+    `maxPrimaryEnergyMeV`, `paiEnabled`, and `primaryParticle`
+  - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`, and other canvases saved with annotations
 
 ## Plotting
 
@@ -110,8 +128,8 @@ bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summar
 
 Notes:
 - The energy deposition plot uses log Y scale by default.
-- Overflow entries are folded into the last visible bin for `EdepPrimary`.
 - Annotations read `RunMeta` from the ROOT file.
+- EM low-energy cutoffs are set to 0.1 eV (see `src/PhysicsList.cc`).
 
 ## Customization
 

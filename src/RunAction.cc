@@ -129,6 +129,42 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->SetH1XAxisTitle(paiTransferId, "Energy transfer (eV)");
         analysisManager->SetH1YAxisTitle(paiTransferId, "Number of PAI steps");
 
+        // Create a 1D histogram for primary residual kinetic energy at end of event
+        // ID 4: PrimaryResidualEnergy
+        G4int residualId = analysisManager->CreateH1(
+            "PrimaryResidualEnergy",
+            "Primary residual kinetic energy at end of event",
+            primaryBins, // 1 eV per bin across scan max energy
+            0.,
+            maxEnergy / eV
+        );
+        analysisManager->SetH1XAxisTitle(residualId, "Residual kinetic energy (eV)");
+        analysisManager->SetH1YAxisTitle(residualId, "Number of events");
+
+        // Create a 1D histogram for primary end volume category
+        // ID 5: PrimaryEndVolume
+        G4int endVolId = analysisManager->CreateH1(
+            "PrimaryEndVolume",
+            "Primary end volume category",
+            5,   // 0: unknown, 1: Al2O3, 2: World, 3: OutOfWorld, 4: Other
+            0.,
+            5.
+        );
+        analysisManager->SetH1XAxisTitle(endVolId, "End volume category");
+        analysisManager->SetH1YAxisTitle(endVolId, "Number of events");
+
+        // Create a 1D histogram for step length in Al2O3
+        // ID 6: StepLengthAl2O3
+        G4int stepLenId = analysisManager->CreateH1(
+            "StepLengthAl2O3",
+            "Step length in Al_{2}O_{3}",
+            200,  // 0.1 nm bins over 0-20 nm
+            0.,
+            20.
+        );
+        analysisManager->SetH1XAxisTitle(stepLenId, "Step length (nm)");
+        analysisManager->SetH1YAxisTitle(stepLenId, "Number of steps");
+
         // Create a 2D histogram: event edep vs number of steps in Al2O3
         // ID 0 for H2: EdepPrimaryVsSteps
         G4int edepVsStepsId = analysisManager->CreateH2(
@@ -143,6 +179,51 @@ void RunAction::BeginOfRunAction(const G4Run*)
         );
         analysisManager->SetH2XAxisTitle(edepVsStepsId, "Primary energy deposition (eV)");
         analysisManager->SetH2YAxisTitle(edepVsStepsId, "Energy-depositing steps per event");
+
+        // Create a 2D histogram: primary residual energy vs end volume category
+        // ID 1 for H2: ResidualEnergyVsEndVolume
+        G4int resVsEndId = analysisManager->CreateH2(
+            "ResidualEnergyVsEndVolume",
+            "Primary residual energy vs end volume",
+            primaryBins,
+            0.,
+            maxEnergy / eV,
+            5,
+            0.,
+            5.
+        );
+        analysisManager->SetH2XAxisTitle(resVsEndId, "Residual kinetic energy (eV)");
+        analysisManager->SetH2YAxisTitle(resVsEndId, "End volume category");
+
+        // Create a 2D histogram: primary residual energy vs last process category
+        // ID 2 for H2: ResidualEnergyVsLastProcess
+        G4int resVsProcId = analysisManager->CreateH2(
+            "ResidualEnergyVsLastProcess",
+            "Primary residual energy vs last process",
+            primaryBins,
+            0.,
+            maxEnergy / eV,
+            7,
+            0.,
+            7.
+        );
+        analysisManager->SetH2XAxisTitle(resVsProcId, "Residual kinetic energy (eV)");
+        analysisManager->SetH2YAxisTitle(resVsProcId, "Last process category");
+
+        // Create a 2D histogram: primary residual energy vs stop status category
+        // ID 3 for H2: ResidualEnergyVsStopStatus
+        G4int resVsStopId = analysisManager->CreateH2(
+            "ResidualEnergyVsStopStatus",
+            "Primary residual energy vs stop status",
+            primaryBins,
+            0.,
+            maxEnergy / eV,
+            7,
+            0.,
+            7.
+        );
+        analysisManager->SetH2XAxisTitle(resVsStopId, "Residual kinetic energy (eV)");
+        analysisManager->SetH2YAxisTitle(resVsStopId, "Stop status category");
 
         histosCreated = true;
     }

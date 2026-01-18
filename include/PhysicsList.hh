@@ -7,7 +7,7 @@
 class PhysicsList : public G4VModularPhysicsList
 {
 public:
-    PhysicsList();
+    explicit PhysicsList(const G4String& emModel = "PAI");
     virtual ~PhysicsList();
 
     void SetPaiEnabledOverride(G4bool enabled);
@@ -19,6 +19,8 @@ public:
     virtual void SetCuts() override;
 
 private:
+    void ConfigureEmPhysics();
+    G4String fEmModel;
     G4int fPaiEnabledOverride;
 };
 

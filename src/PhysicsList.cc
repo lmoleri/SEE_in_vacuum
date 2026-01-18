@@ -1,7 +1,8 @@
 #include "PhysicsList.hh"
 
-#include "G4EmStandardPhysics.hh"
 #include "G4EmStandardPhysics_option4.hh"
+#include "G4EmLivermorePhysics.hh"
+#include "G4EmPenelopePhysics.hh"
 #include "G4DecayPhysics.hh"
 #include "G4RadioactiveDecayPhysics.hh"
 
@@ -15,20 +16,47 @@
 #include "G4ParticleDefinition.hh"
 #include "G4ProcessManager.hh"
 
+#include <algorithm>
 #include <cstdlib>
 #include <string>
 
-PhysicsList::PhysicsList()
-    : fPaiEnabledOverride(-1)
+PhysicsList::PhysicsList(const G4String& emModel)
+    : fEmModel(emModel),
+      fPaiEnabledOverride(-1)
 {
-    // Register physics constructors
-    RegisterPhysics(new G4EmStandardPhysics_option4());  // Electromagnetic physics
+    ConfigureEmPhysics();
     RegisterPhysics(new G4DecayPhysics());               // Decay physics
     RegisterPhysics(new G4RadioactiveDecayPhysics());    // Radioactive decay
 }
 
 PhysicsList::~PhysicsList()
 {
+}
+
+void PhysicsList::ConfigureEmPhysics()
+{
+    G4String model = fEmModel;
+    model.toLower();
+    if (model == "pai") {
+        RegisterPhysics(new G4EmStandardPhysics_option4());
+        fPaiEnabledOverride = 1;
+        return;
+    }
+    if (model == "g4emlivermorephysics" || model == "livermore" || model == "livermorephysics") {
+        RegisterPhysics(new G4EmLivermorePhysics());
+        fPaiEnabledOverride = 0;
+        return;
+    }
+    if (model == "g4empenelopephysics" || model == "penelope" || model == "penelopephysics") {
+        RegisterPhysics(new G4EmPenelopePhysics());
+        fPaiEnabledOverride = 0;
+        return;
+    }
+
+    G4cout << "[PhysicsList] Unknown EM model '" << fEmModel
+           << "'. Falling back to PAI (Option4 + PAI)." << G4endl;
+    RegisterPhysics(new G4EmStandardPhysics_option4());
+    fPaiEnabledOverride = 1;
 }
 
 void PhysicsList::SetPaiEnabledOverride(G4bool enabled)
@@ -40,9 +68,9 @@ void PhysicsList::ConstructProcess()
 {
     // Enforce low-energy tracking thresholds before building EM tables.
     auto* emParams = G4EmParameters::Instance();
-    emParams->SetMinEnergy(1 * eV);
-    emParams->SetLowestElectronEnergy(1 * eV);
-    emParams->SetLowestMuHadEnergy(1 * eV);
+    emParams->SetMinEnergy(0.1 * eV);
+    emParams->SetLowestElectronEnergy(0.1 * eV);
+    emParams->SetLowestMuHadEnergy(0.1 * eV);
 
     // Let the modular physics list construct all standard processes first
     G4VModularPhysicsList::ConstructProcess();
@@ -111,5 +139,5 @@ void PhysicsList::SetCuts()
     SetCutsWithDefault();
     
     // Set production thresholds
-    G4ProductionCutsTable::GetProductionCutsTable()->SetEnergyRange(1*eV, 1*GeV);
+    G4ProductionCutsTable::GetProductionCutsTable()->SetEnergyRange(0.1*eV, 1*GeV);
 }

@@ -152,6 +152,13 @@ std::string ParseString(const std::string& content, const std::string& key)
     return content.substr(firstQuote + 1, secondQuote - firstQuote - 1);
 }
 
+std::string ToLower(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return value;
+}
+
 bool ParseBool(const std::string& content, const std::string& key, bool& out)
 {
     const std::string searchKey = "\"" + key + "\"";
@@ -193,8 +200,15 @@ int main(int argc, char** argv)
     std::string jsonContent;
     bool paiOverride = false;
     bool paiEnabled = true;
+    std::string emModel = "PAI";
+    std::string emModelLower = "pai";
     if (isJsonScan) {
         jsonContent = StripWhitespace(ReadFile(arg1));
+        std::string emModelJson = ParseString(jsonContent, "em_model");
+        if (!emModelJson.empty()) {
+            emModel = emModelJson;
+            emModelLower = ToLower(emModelJson);
+        }
         if (ParseBool(jsonContent, "pai_enabled", paiEnabled)) {
             paiOverride = true;
         }
@@ -206,7 +220,7 @@ int main(int argc, char** argv)
     // Set mandatory initialization classes
     auto* detector = new DetectorConstruction();
     runManager->SetUserInitialization(detector);
-    auto* physicsList = new PhysicsList();
+    auto* physicsList = new PhysicsList(emModel.c_str());
     if (paiOverride) {
         physicsList->SetPaiEnabledOverride(paiEnabled);
     }
@@ -261,7 +275,10 @@ int main(int argc, char** argv)
 
         primaryGenerator->SetParticleName(primaryParticle);
         runAction->SetPrimaryParticleName(primaryParticle);
-        runAction->SetPaiEnabled(paiOverride ? paiEnabled : true);
+        const bool emModelIsPai = (emModelLower == "pai");
+        const bool effectivePaiEnabled =
+            emModelIsPai ? (paiOverride ? paiEnabled : true) : false;
+        runAction->SetPaiEnabled(effectivePaiEnabled);
         if (!energiesMeV.empty()) {
             const auto maxEnergy = *std::max_element(energiesMeV.begin(), energiesMeV.end());
             runAction->SetMaxPrimaryEnergy(maxEnergy * MeV);
