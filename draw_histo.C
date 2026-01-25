@@ -129,6 +129,14 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     };
     std::string particleText = particleLabel(primaryParticle);
     std::string modelText = modelLabel(emModel);
+    auto maxNonEmptyEdge = [](TH1* hist) {
+        if (!hist) return 0.0;
+        const int lastBin = hist->FindLastBinAbove(0.0);
+        if (lastBin <= 0) {
+            return 0.0;
+        }
+        return hist->GetXaxis()->GetBinUpEdge(lastBin);
+    };
 
     // Create a canvas
     TCanvas* c1 = new TCanvas("c1", "Energy Deposition", 800, 600);
@@ -192,6 +200,10 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
 
     hSteps->SetTitle(Form("Energy-depositing steps per event (%s, %s)",
                           particleText.c_str(), modelText.c_str()));
+    const double stepsMaxEdge = maxNonEmptyEdge(hSteps);
+    if (stepsMaxEdge > 0.0) {
+        hSteps->GetXaxis()->SetRangeUser(0.0, stepsMaxEdge);
+    }
     hSteps->Draw("HIST");
 
     // Add info text

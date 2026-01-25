@@ -14,9 +14,9 @@
     0.0009,
     0.001
   ],
-  "em_model": "PAI",
+  "em_model": "Penelope",
   "primary_particle": "e-",
-  "pai_enabled": true,
+  "pai_enabled": false,
   "events": 10000,
-  "output_dir": "results/scan_thick5nm_particlee-_energy100-1000eV_step100eV_events10000"
+  "output_dir": "results/scan_thick5nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope"
 }

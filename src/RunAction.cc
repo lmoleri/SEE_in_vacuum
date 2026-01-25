@@ -108,12 +108,13 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         // Create a 1D histogram for the number of microscopic energy-depositing
         // steps in Al2O3 per event
+        const G4int stepsMax = 200;
         G4int stepsHistoId = analysisManager->CreateH1(
             "EdepInteractions",
             "Microscopic energy-depositing steps in Al_{2}O_{3} per event",
-            10,   // number of bins (1 step per bin)
+            stepsMax,   // number of bins (1 step per bin)
             0.,   // min count
-            10.   // max count
+            stepsMax   // max count
         );
 
         analysisManager->SetH1XAxisTitle(stepsHistoId, "Energy-depositing steps per event");
@@ -175,9 +176,9 @@ void RunAction::BeginOfRunAction(const G4Run*)
             primaryBins,
             0.,
             maxEnergy / eV,
-            20,
+            stepsMax,
             0.,
-            20.
+            stepsMax
         );
         analysisManager->SetH2XAxisTitle(edepVsStepsId, "Primary energy deposition (eV)");
         analysisManager->SetH2YAxisTitle(edepVsStepsId, "Energy-depositing steps per event");

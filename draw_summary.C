@@ -299,6 +299,7 @@ void draw_summary(const char* scanDir,
         std::map<double, std::vector<std::pair<double, double>>> mpvByEnergy;
 
         double maxPrimaryEnergyMeV = 0.0;
+        double maxStepsEdge = 0.0;
         for (const auto& entry : particleEntries) {
             if (entry.energy > maxPrimaryEnergyMeV) {
                 maxPrimaryEnergyMeV = entry.energy;
@@ -319,6 +320,13 @@ void draw_summary(const char* scanDir,
             printf("Warning: missing histograms in %s\n", filePath.Data());
             f->Close();
             continue;
+        }
+        const int lastStepsBin = hSteps->FindLastBinAbove(0.0);
+        if (lastStepsBin > 0) {
+            const double edge = hSteps->GetXaxis()->GetBinUpEdge(lastStepsBin);
+            if (edge > maxStepsEdge) {
+                maxStepsEdge = edge;
+            }
         }
 
         TString baseName = BaseNameNoExt(filePath);
@@ -387,6 +395,9 @@ void draw_summary(const char* scanDir,
                                        particleText.Data(), modelTitle.Data()));
             hStepsClone->GetYaxis()->SetTitleOffset(1.35);
             hStepsClone->GetYaxis()->SetLabelSize(0.035);
+            if (maxStepsEdge > 0.0) {
+                hStepsClone->GetXaxis()->SetRangeUser(0.0, maxStepsEdge);
+            }
             hStepsClone->Draw("HIST");
             firstSteps = false;
         } else {
