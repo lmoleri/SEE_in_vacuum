@@ -18,6 +18,7 @@ RunAction::RunAction()
       fPrimaryEnergy(0.),
       fMaxPrimaryEnergy(0.),
       fPrimaryParticleName("e-"),
+      fEmModel("PAI"),
       fSampleThickness(0.),
       fOutputTag("SEE_in_vacuum"),
       fPaiEnabled(false)
@@ -58,6 +59,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleDColumn("maxPrimaryEnergyMeV");
         analysisManager->CreateNtupleIColumn("paiEnabled");
         analysisManager->CreateNtupleSColumn("primaryParticle");
+        analysisManager->CreateNtupleSColumn("emModel");
         analysisManager->FinishNtuple();
         metaCreated = true;
     }
@@ -277,6 +279,7 @@ void RunAction::EndOfRunAction(const G4Run* run)
         analysisManager->FillNtupleDColumn(2, fMaxPrimaryEnergy / MeV);
         analysisManager->FillNtupleIColumn(3, fPaiEnabled ? 1 : 0);
         analysisManager->FillNtupleSColumn(4, fPrimaryParticleName);
+        analysisManager->FillNtupleSColumn(5, fEmModel);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -317,6 +320,11 @@ void RunAction::SetMaxPrimaryEnergy(G4double energy)
 void RunAction::SetPrimaryParticleName(const G4String& name)
 {
     fPrimaryParticleName = name;
+}
+
+void RunAction::SetEmModel(const G4String& model)
+{
+    fEmModel = model;
 }
 
 void RunAction::SetSampleThickness(G4double thickness)

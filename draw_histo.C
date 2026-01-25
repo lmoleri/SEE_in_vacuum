@@ -3,6 +3,10 @@
 // Or from build directory: root -l ../draw_histo.C
 // Optional: root -l 'draw_histo.C("file.root")'
 
+#include <algorithm>
+#include <cctype>
+#include <string>
+
 void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     // Open the ROOT file
     TFile* f = TFile::Open(fileName, "UPDATE");
@@ -77,6 +81,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     double sampleThicknessNm = -1.0;
     double maxPrimaryEnergyMeV = -1.0;
     char primaryParticle[64] = "";
+    char emModel[64] = "";
     TTree* meta = (TTree*)f->Get("RunMeta");
     if (meta) {
         meta->SetBranchAddress("primaryEnergyMeV", &primaryEnergyMeV);
@@ -86,6 +91,9 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         }
         if (meta->GetBranch("primaryParticle")) {
             meta->SetBranchAddress("primaryParticle", primaryParticle);
+        }
+        if (meta->GetBranch("emModel")) {
+            meta->SetBranchAddress("emModel", emModel);
         }
         meta->GetEntry(0);
     }
@@ -98,6 +106,17 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         if (!name.empty()) return name;
         return std::string("e^{-}");
     };
+    auto modelLabel = [](std::string name) {
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        if (name == "pai") return std::string("PAI");
+        if (name == "livermore" || name == "livermorephysics" ||
+            name == "g4emlivermorephysics") return std::string("Livermore");
+        if (name == "penelope" || name == "penelopephysics" ||
+            name == "g4empenelopephysics") return std::string("Penelope");
+        if (!name.empty()) return name;
+        return std::string("unknown");
+    };
     auto energyLabel = [](double energyMeV) -> std::string {
         if (energyMeV <= 0.) return std::string("n/a");
         if (energyMeV < 1e-3) {
@@ -109,6 +128,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         return std::string(Form("%.3g MeV", energyMeV));
     };
     std::string particleText = particleLabel(primaryParticle);
+    std::string modelText = modelLabel(emModel);
 
     // Create a canvas
     TCanvas* c1 = new TCanvas("c1", "Energy Deposition", 800, 600);
@@ -125,7 +145,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     h->SetLineWidth(3);
 
     // Draw histogram with the normal default style
-    h->SetTitle(Form("Primary %s energy deposition in Al_{2}O_{3}", particleText.c_str()));
+    h->SetTitle(Form("Primary %s energy deposition in Al_{2}O_{3} (%s)",
+                     particleText.c_str(), modelText.c_str()));
     const double xMaxEv = h->GetXaxis()->GetXmax();
     if (xMaxEv > 0.) {
         h->GetXaxis()->SetRangeUser(0.0, xMaxEv);
@@ -148,6 +169,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     } else {
         info1.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
     }
+    info1.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
     
     // Update and write canvas into the ROOT file (so TBrowser can show it)
     c1->Update();
@@ -168,7 +190,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     hSteps->SetLineColor(kMagenta + 1);
     hSteps->SetLineWidth(3);
 
-    hSteps->SetTitle(Form("Energy-depositing steps per event (%s)", particleText.c_str()));
+    hSteps->SetTitle(Form("Energy-depositing steps per event (%s, %s)",
+                          particleText.c_str(), modelText.c_str()));
     hSteps->Draw("HIST");
 
     // Add info text
@@ -187,6 +210,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     } else {
         info2.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
     }
+    info2.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
     c2->Update();
     c2->Draw();
@@ -202,7 +226,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hStep->GetYaxis()->SetLabelSize(0.035);
         hStep->SetLineColor(kMagenta + 1);
         hStep->SetLineWidth(3);
-        hStep->SetTitle(Form("Energy deposition per step (%s)", particleText.c_str()));
+        hStep->SetTitle(Form("Energy deposition per step (%s, %s)",
+                             particleText.c_str(), modelText.c_str()));
         hStep->Draw("HIST");
 
         TLatex info3;
@@ -220,6 +245,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             info3.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        info3.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         c3->Update();
         c3->Draw();
@@ -236,7 +262,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hPai->GetYaxis()->SetLabelSize(0.035);
         hPai->SetLineColor(kMagenta + 1);
         hPai->SetLineWidth(3);
-        hPai->SetTitle(Form("PAI energy transfer per step (%s)", particleText.c_str()));
+        hPai->SetTitle(Form("PAI energy transfer per step (%s, %s)",
+                            particleText.c_str(), modelText.c_str()));
         hPai->Draw("HIST");
 
         TLatex infoPai;
@@ -254,6 +281,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             infoPai.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        infoPai.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         cPai->Update();
         cPai->Draw();
@@ -270,7 +298,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hResidual->GetYaxis()->SetLabelSize(0.035);
         hResidual->SetLineColor(kMagenta + 1);
         hResidual->SetLineWidth(3);
-        hResidual->SetTitle(Form("Primary residual energy (%s)", particleText.c_str()));
+        hResidual->SetTitle(Form("Primary residual energy (%s, %s)",
+                                 particleText.c_str(), modelText.c_str()));
         hResidual->Draw("HIST");
 
         TLatex infoRes;
@@ -288,6 +317,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             infoRes.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        infoRes.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         cRes->Update();
         cRes->Draw();
@@ -304,7 +334,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hEndVol->GetYaxis()->SetLabelSize(0.035);
         hEndVol->SetLineColor(kMagenta + 1);
         hEndVol->SetLineWidth(3);
-        hEndVol->SetTitle(Form("Primary end volume (%s)", particleText.c_str()));
+        hEndVol->SetTitle(Form("Primary end volume (%s, %s)",
+                               particleText.c_str(), modelText.c_str()));
         hEndVol->GetXaxis()->SetBinLabel(1, "Unknown");
         hEndVol->GetXaxis()->SetBinLabel(2, "Al2O3");
         hEndVol->GetXaxis()->SetBinLabel(3, "World");
@@ -328,6 +359,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             infoEnd.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        infoEnd.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         cEnd->Update();
         cEnd->Draw();
@@ -344,7 +376,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hStepLen->GetYaxis()->SetLabelSize(0.035);
         hStepLen->SetLineColor(kMagenta + 1);
         hStepLen->SetLineWidth(3);
-        hStepLen->SetTitle("Step length in Al_{2}O_{3}");
+        hStepLen->SetTitle(Form("Step length in Al_{2}O_{3} (%s, %s)",
+                                particleText.c_str(), modelText.c_str()));
         hStepLen->Draw("HIST");
 
         TLatex infoStep;
@@ -362,6 +395,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             infoStep.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        infoStep.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         cStep->Update();
         cStep->Draw();
@@ -375,7 +409,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c4->SetLeftMargin(0.15);
         c4->SetRightMargin(0.15);
 
-        hEdepVsSteps->SetTitle(Form("Primary edep vs steps (%s)", particleText.c_str()));
+        hEdepVsSteps->SetTitle(Form("Primary edep vs steps (%s, %s)",
+                                    particleText.c_str(), modelText.c_str()));
         hEdepVsSteps->GetYaxis()->SetTitleOffset(1.35);
         hEdepVsSteps->GetYaxis()->SetLabelSize(0.035);
         hEdepVsSteps->Draw("COLZ");
@@ -395,6 +430,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             info4.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        info4.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         c4->Update();
         c4->Draw();
@@ -408,7 +444,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c5->SetLeftMargin(0.15);
         c5->SetRightMargin(0.18);
 
-        hResVsEnd->SetTitle(Form("Residual energy vs end volume (%s)", particleText.c_str()));
+        hResVsEnd->SetTitle(Form("Residual energy vs end volume (%s, %s)",
+                                 particleText.c_str(), modelText.c_str()));
         hResVsEnd->GetYaxis()->SetTitleOffset(1.35);
         hResVsEnd->GetYaxis()->SetLabelSize(0.035);
         hResVsEnd->GetYaxis()->SetBinLabel(1, "Unknown");
@@ -434,6 +471,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             info5.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        info5.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         c5->Update();
         c5->Draw();
@@ -447,7 +485,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c6->SetLeftMargin(0.15);
         c6->SetRightMargin(0.18);
 
-        hResVsProc->SetTitle(Form("Residual energy vs last process (%s)", particleText.c_str()));
+        hResVsProc->SetTitle(Form("Residual energy vs last process (%s, %s)",
+                                  particleText.c_str(), modelText.c_str()));
         hResVsProc->GetYaxis()->SetTitleOffset(1.35);
         hResVsProc->GetYaxis()->SetLabelSize(0.035);
         hResVsProc->GetYaxis()->SetBinLabel(1, "Unknown");
@@ -475,6 +514,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             info6.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        info6.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         c6->Update();
         c6->Draw();
@@ -488,7 +528,8 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c7->SetLeftMargin(0.15);
         c7->SetRightMargin(0.18);
 
-        hResVsStop->SetTitle(Form("Residual energy vs stop status (%s)", particleText.c_str()));
+        hResVsStop->SetTitle(Form("Residual energy vs stop status (%s, %s)",
+                                  particleText.c_str(), modelText.c_str()));
         hResVsStop->GetYaxis()->SetTitleOffset(1.35);
         hResVsStop->GetYaxis()->SetLabelSize(0.035);
         hResVsStop->GetYaxis()->SetBinLabel(1, "Unknown");
@@ -516,6 +557,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         } else {
             info7.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
         }
+        info7.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
 
         c7->Update();
         c7->Draw();

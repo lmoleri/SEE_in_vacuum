@@ -26,6 +26,7 @@ public:
     void SetPrimaryEnergy(G4double energy);
     void SetMaxPrimaryEnergy(G4double energy);
     void SetPrimaryParticleName(const G4String& name);
+    void SetEmModel(const G4String& model);
     void SetSampleThickness(G4double thickness);
     void SetOutputTag(const G4String& tag);
     void SetPaiEnabled(G4bool enabled);
@@ -38,6 +39,7 @@ private:
     G4double fPrimaryEnergy;
     G4double fMaxPrimaryEnergy;
     G4String fPrimaryParticleName;
+    G4String fEmModel;
     G4double fSampleThickness;
     G4String fOutputTag;
     G4bool fPaiEnabled;

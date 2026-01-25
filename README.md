@@ -100,7 +100,7 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
   - `ResidualEnergyVsLastProcess`: 2D residual energy vs last process category
   - `ResidualEnergyVsStopStatus`: 2D residual energy vs stop status category
   - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`,
-    `maxPrimaryEnergyMeV`, `paiEnabled`, and `primaryParticle`
+    `maxPrimaryEnergyMeV`, `paiEnabled`, `primaryParticle`, and `emModel`
   - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`, and other canvases saved with annotations
 
 ## Plotting
@@ -129,6 +129,7 @@ bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summar
 Notes:
 - The energy deposition plot uses log Y scale by default.
 - Annotations read `RunMeta` from the ROOT file.
+- Plot titles/legends include the selected EM model (PAI/Livermore/Penelope).
 - EM low-energy cutoffs are set to 0.1 eV (see `src/PhysicsList.cc`).
 
 ## Customization

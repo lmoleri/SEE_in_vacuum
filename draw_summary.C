@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <map>
 #include <cmath>
+#include <set>
 
 namespace {
 
@@ -129,6 +130,18 @@ TString ParticleLabel(const TString& name) {
     return "e^{-}";
 }
 
+TString ModelLabel(const TString& name) {
+    if (name.IsNull()) return "unknown";
+    TString lower = name;
+    lower.ToLower();
+    if (lower == "pai") return "PAI";
+    if (lower == "livermore" || lower == "livermorephysics" ||
+        lower == "g4emlivermorephysics") return "Livermore";
+    if (lower == "penelope" || lower == "penelopephysics" ||
+        lower == "g4empenelopephysics") return "Penelope";
+    return name;
+}
+
 } // namespace
 
 void draw_summary(const char* scanDir,
@@ -155,6 +168,7 @@ void draw_summary(const char* scanDir,
         double energy;
         double events;
         TString particle;
+        TString emModel;
     };
     std::vector<FileEntry> entries;
     entries.reserve(files.size());
@@ -164,7 +178,7 @@ void draw_summary(const char* scanDir,
         double energy = ParseParam(ExtractBetween(baseName, "energy", "MeV"));
         double events = ParseParam(ExtractBetween(baseName, "events", ""));
         TString particle = ExtractBetween(baseName, "particle", "_energy");
-        entries.push_back({filePath, thickness, energy, events, particle});
+        entries.push_back({filePath, thickness, energy, events, particle, ""});
     }
 
     for (auto& entry : entries) {
@@ -175,13 +189,20 @@ void draw_summary(const char* scanDir,
         TTree* meta = dynamic_cast<TTree*>(f->Get("RunMeta"));
         if (meta) {
             char particle[64] = "";
+            char emModel[64] = "";
             if (meta->GetBranch("primaryParticle")) {
                 meta->SetBranchAddress("primaryParticle", particle);
+            }
+            if (meta->GetBranch("emModel")) {
+                meta->SetBranchAddress("emModel", emModel);
             }
             if (meta->GetEntries() > 0) {
                 meta->GetEntry(0);
                 if (particle[0] != '\0') {
                     entry.particle = particle;
+                }
+                if (emModel[0] != '\0') {
+                    entry.emModel = emModel;
                 }
             }
         }
@@ -214,6 +235,16 @@ void draw_summary(const char* scanDir,
         }
 
         TString particleText = ParticleLabel(particleKey);
+        std::set<TString> models;
+        for (const auto& entry : particleEntries) {
+            models.insert(ModelLabel(entry.emModel));
+        }
+        TString modelTitle = "unknown";
+        if (models.size() == 1) {
+            modelTitle = *models.begin();
+        } else if (models.size() > 1) {
+            modelTitle = "mixed models";
+        }
         TString eventsTitle;
         if (particleEntries.front().events > 0.) {
             eventsTitle = Form("N=%.0f", particleEntries.front().events);
@@ -292,6 +323,10 @@ void draw_summary(const char* scanDir,
 
         TString baseName = BaseNameNoExt(filePath);
         TString label = BuildLabelFromName(baseName);
+        TString modelLabel = ModelLabel(entry.emModel);
+        if (!modelLabel.IsNull() && modelLabel != "unknown") {
+            label += ", model=" + modelLabel;
+        }
         int color = colors[colorIndex % nColors];
         colorIndex++;
 
@@ -332,7 +367,8 @@ void draw_summary(const char* scanDir,
 
         c1->cd();
         if (firstPrimary) {
-            hPrimaryClone->SetTitle(Form("EdepPrimary Summary (%s)", particleText.Data()));
+            hPrimaryClone->SetTitle(Form("EdepPrimary Summary (%s, %s)",
+                                         particleText.Data(), modelTitle.Data()));
             hPrimaryClone->GetYaxis()->SetTitleOffset(1.35);
             hPrimaryClone->GetYaxis()->SetLabelSize(0.035);
             if (maxPrimaryEnergyMeV > 0.) {
@@ -347,7 +383,8 @@ void draw_summary(const char* scanDir,
 
         c2->cd();
         if (firstSteps) {
-            hStepsClone->SetTitle(Form("EdepInteractions Summary (%s)", particleText.Data()));
+            hStepsClone->SetTitle(Form("EdepInteractions Summary (%s, %s)",
+                                       particleText.Data(), modelTitle.Data()));
             hStepsClone->GetYaxis()->SetTitleOffset(1.35);
             hStepsClone->GetYaxis()->SetLabelSize(0.035);
             hStepsClone->Draw("HIST");
@@ -400,7 +437,8 @@ void draw_summary(const char* scanDir,
             mgFrac->Add(g, "LP");
             leg3->AddEntry(g, EnergyLabel(kv.first), "lp");
         }
-        mgFrac->SetTitle(Form("Non-zero steps fraction (%s)", particleText.Data()));
+        mgFrac->SetTitle(Form("Non-zero steps fraction (%s, %s)",
+                              particleText.Data(), modelTitle.Data()));
         mgFrac->Draw("A");
         mgFrac->GetXaxis()->SetTitle("Sample thickness (nm)");
         mgFrac->GetYaxis()->SetTitle("Fraction of events with non-zero steps");
@@ -442,7 +480,8 @@ void draw_summary(const char* scanDir,
             mgMpv->Add(g, "LP");
             leg4->AddEntry(g, EnergyLabel(kv.first), "lp");
         }
-        mgMpv->SetTitle(Form("EdepPrimary MPV (Landau) (%s)", particleText.Data()));
+        mgMpv->SetTitle(Form("EdepPrimary MPV (Landau) (%s, %s)",
+                             particleText.Data(), modelTitle.Data()));
         mgMpv->Draw("A");
         mgMpv->GetXaxis()->SetTitle("Sample thickness (nm)");
         mgMpv->GetYaxis()->SetTitle("MPV of Landau fit (eV)");

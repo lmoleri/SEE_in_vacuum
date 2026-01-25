@@ -275,6 +275,7 @@ int main(int argc, char** argv)
 
         primaryGenerator->SetParticleName(primaryParticle);
         runAction->SetPrimaryParticleName(primaryParticle);
+        runAction->SetEmModel(emModel);
         const bool emModelIsPai = (emModelLower == "pai");
         const bool effectivePaiEnabled =
             emModelIsPai ? (paiOverride ? paiEnabled : true) : false;
