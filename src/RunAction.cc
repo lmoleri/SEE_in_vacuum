@@ -172,12 +172,19 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         // Create a 1D histogram for step length in Al2O3
         // ID 6: StepLengthAl2O3
+        const G4double thicknessNm = (fSampleThickness > 0.) ? fSampleThickness / nm : 0.0;
+        const G4double maxStepLenNm = std::max(20.0, std::min(thicknessNm * 10.0, 10000.0));
+        const G4double stepLenBinNm = 0.1;
+        const G4int maxStepLenBins = 200000;
+        const G4double idealStepLenBins = std::ceil(maxStepLenNm / stepLenBinNm);
+        const G4int stepLenBins = std::max(
+            1, static_cast<G4int>(std::min(idealStepLenBins, static_cast<G4double>(maxStepLenBins))));
         G4int stepLenId = analysisManager->CreateH1(
             "StepLengthAl2O3",
             "Step length in Al_{2}O_{3}",
-            200,  // 0.1 nm bins over 0-20 nm
+            stepLenBins,  // ~0.1 nm bins up to capped max
             0.,
-            20.
+            maxStepLenNm
         );
         analysisManager->SetH1XAxisTitle(stepLenId, "Step length (nm)");
         analysisManager->SetH1YAxisTitle(stepLenId, "Number of steps");
