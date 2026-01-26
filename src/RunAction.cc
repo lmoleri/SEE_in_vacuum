@@ -130,12 +130,18 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         // Create a 1D histogram for PAI electron-ionisation energy transfers
         // ID 3: PAITransfer
+        const G4double maxPaiTransferEv =
+            std::max(50.0, std::min(maxEnergy / eV, 50000.0));
+        const G4int maxPaiBins = 200000;
+        const G4double idealPaiBins = std::ceil(maxPaiTransferEv);
+        const G4int paiBins = std::max(
+            1, static_cast<G4int>(std::min(idealPaiBins, static_cast<G4double>(maxPaiBins))));
         G4int paiTransferId = analysisManager->CreateH1(
             "PAITransfer",
             "PAI energy transfer per step in Al_{2}O_{3}",
-            200,  // 0.25 eV bins over 0-50 eV
+            paiBins,  // ~1 eV per bin up to capped max
             0.,
-            50.
+            maxPaiTransferEv
         );
         analysisManager->SetH1XAxisTitle(paiTransferId, "Energy transfer (eV)");
         analysisManager->SetH1YAxisTitle(paiTransferId, "Number of PAI steps");

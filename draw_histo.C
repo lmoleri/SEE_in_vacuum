@@ -297,6 +297,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     if (hStep) {
         TCanvas* c3 = new TCanvas("c3", "Energy Deposition per Step", 800, 600);
         c3->SetGrid();
+        c3->SetLogy();
         c3->SetLeftMargin(0.15);
 
         hStep->GetYaxis()->SetTitleOffset(1.35);
