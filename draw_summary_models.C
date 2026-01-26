@@ -10,6 +10,7 @@
 #include "TSystemFile.h"
 #include "TList.h"
 #include "TString.h"
+#include "TSystem.h"
 #include "TStyle.h"
 #include "TTree.h"
 #include "TLatex.h"
@@ -175,6 +176,41 @@ void draw_summary_models(const char* dirPai,
         printf("Error: cannot create output file %s\n", outputFile);
         return;
     }
+
+    std::string plotsDir;
+    if (outputFile && outputFile[0] != '\0') {
+        std::string outPath = outputFile;
+        std::string baseDir;
+        const std::string marker = "/results/";
+        const auto pos = outPath.rfind(marker);
+        if (pos != std::string::npos) {
+            baseDir = outPath.substr(0, pos);
+        } else {
+            baseDir = gSystem->DirName(outPath.c_str());
+            if (baseDir == "results") {
+                baseDir = ".";
+            }
+        }
+        std::string fileBase = gSystem->BaseName(outPath.c_str());
+        if (fileBase.size() >= 5 && fileBase.substr(fileBase.size() - 5) == ".root") {
+            fileBase = fileBase.substr(0, fileBase.size() - 5);
+        }
+        if (baseDir.empty() || baseDir == ".") {
+            plotsDir = "plots/" + fileBase;
+        } else {
+            plotsDir = baseDir + "/plots/" + fileBase;
+        }
+        gSystem->mkdir(plotsDir.c_str(), true);
+    }
+    auto saveCanvas = [&](TCanvas* canvas, const TString& name) {
+        if (!canvas || plotsDir.empty() || name.IsNull()) {
+            return;
+        }
+        std::string rootPath = plotsDir + "/" + name.Data() + ".root";
+        std::string pdfPath = plotsDir + "/" + name.Data() + ".pdf";
+        canvas->SaveAs(rootPath.c_str());
+        canvas->SaveAs(pdfPath.c_str());
+    };
 
     for (const auto& kv : byEnergy) {
         const auto& group = kv.second;
@@ -368,6 +404,9 @@ void draw_summary_models(const char* dirPai,
         c1->Write(canvasName, TObject::kOverwrite);
         c2->Write(canvasNameSteps, TObject::kOverwrite);
         c3->Write(canvasNameStepLen, TObject::kOverwrite);
+        saveCanvas(c1, canvasName);
+        saveCanvas(c2, canvasNameSteps);
+        saveCanvas(c3, canvasNameStepLen);
     }
 
     out->Write("", TObject::kOverwrite);
