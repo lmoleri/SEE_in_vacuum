@@ -333,7 +333,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         saveCanvas(c3, "EdepStepCanvas");
     }
 
-    if (hPai) {
+    if (hPai && modelText == "PAI") {
         TCanvas* cPai = new TCanvas("cPai", "PAI Energy Transfer per Step", 800, 600);
         cPai->SetGrid();
         cPai->SetLeftMargin(0.15);
@@ -344,6 +344,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hPai->SetLineWidth(3);
         hPai->SetTitle(Form("PAI energy transfer per step (%s, %s)",
                             particleText.c_str(), modelText.c_str()));
+        trimXAxis(hPai);
         hPai->Draw("HIST");
 
         TLatex infoPai;
