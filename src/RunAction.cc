@@ -98,12 +98,18 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         // Create a 1D histogram for energy deposited per step in Al2O3
         // ID 2: EdepStep
+        const G4double maxStepEdepEv =
+            std::max(50.0, std::min(maxEnergy / eV, 50000.0));
+        const G4int maxStepBins = 200000;
+        const G4double idealStepBins = std::ceil(maxStepEdepEv);
+        const G4int stepBins = std::max(
+            1, static_cast<G4int>(std::min(idealStepBins, static_cast<G4double>(maxStepBins))));
         G4int stepEdepId = analysisManager->CreateH1(
             "EdepStep",
             "Energy deposition per step in Al_{2}O_{3}",
-            100,  // 0.5 eV bins over 0-50 eV
+            stepBins,  // ~1 eV per bin up to capped max
             0.,
-            50.
+            maxStepEdepEv
         );
         analysisManager->SetH1XAxisTitle(stepEdepId, "Energy deposition per step (eV)");
         analysisManager->SetH1YAxisTitle(stepEdepId, "Number of steps");
