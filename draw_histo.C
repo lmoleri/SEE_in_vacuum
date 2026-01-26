@@ -3,6 +3,8 @@
 // Or from build directory: root -l ../draw_histo.C
 // Optional: root -l 'draw_histo.C("file.root")'
 
+#include "TSystem.h"
+
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -137,6 +139,52 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         }
         return hist->GetXaxis()->GetBinUpEdge(lastBin);
     };
+    std::string plotDir;
+    {
+        std::string path = fileName ? fileName : "";
+        std::string baseDir;
+        std::string subDir;
+        const std::string marker = "/results/";
+        const auto pos = path.rfind(marker);
+        if (pos != std::string::npos) {
+            baseDir = path.substr(0, pos);
+            std::string rest = path.substr(pos + marker.size());
+            const auto slash = rest.rfind('/');
+            if (slash != std::string::npos) {
+                subDir = rest.substr(0, slash);
+            }
+        } else {
+            std::string dir = gSystem->DirName(path.c_str());
+            baseDir = gSystem->DirName(dir.c_str());
+            subDir = gSystem->BaseName(dir.c_str());
+            if (baseDir == "results") {
+                baseDir = ".";
+            }
+        }
+        std::string fileBase = gSystem->BaseName(path.c_str());
+        if (fileBase.size() >= 5 && fileBase.substr(fileBase.size() - 5) == ".root") {
+            fileBase = fileBase.substr(0, fileBase.size() - 5);
+        }
+        if (baseDir.empty() || baseDir == ".") {
+            plotDir = "plots";
+        } else {
+            plotDir = baseDir + "/plots";
+        }
+        if (!subDir.empty()) {
+            plotDir += "/" + subDir;
+        }
+        plotDir += "/" + fileBase;
+        gSystem->mkdir(plotDir.c_str(), true);
+    }
+    auto saveCanvas = [&](TCanvas* canvas, const char* name) {
+        if (!canvas || !name || plotDir.empty()) {
+            return;
+        }
+        std::string rootPath = plotDir + "/" + name + ".root";
+        std::string pdfPath = plotDir + "/" + name + ".pdf";
+        canvas->SaveAs(rootPath.c_str());
+        canvas->SaveAs(pdfPath.c_str());
+    };
 
     // Create a canvas
     TCanvas* c1 = new TCanvas("c1", "Energy Deposition", 800, 600);
@@ -184,6 +232,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     c1->Draw();
     f->cd();
     c1->Write("EdepPrimaryCanvas", TObject::kOverwrite);
+    saveCanvas(c1, "EdepPrimaryCanvas");
 
     // Create a canvas for the interaction count histogram
     TCanvas* c2 = new TCanvas("c2", "Energy Deposition Steps", 800, 600);
@@ -228,6 +277,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     c2->Draw();
     f->cd();
     c2->Write("EdepInteractionsCanvas", TObject::kOverwrite);
+    saveCanvas(c2, "EdepInteractionsCanvas");
 
     if (hStep) {
         TCanvas* c3 = new TCanvas("c3", "Energy Deposition per Step", 800, 600);
@@ -263,6 +313,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c3->Draw();
         f->cd();
         c3->Write("EdepStepCanvas", TObject::kOverwrite);
+        saveCanvas(c3, "EdepStepCanvas");
     }
 
     if (hPai) {
@@ -299,6 +350,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         cPai->Draw();
         f->cd();
         cPai->Write("PAITransferCanvas", TObject::kOverwrite);
+        saveCanvas(cPai, "PAITransferCanvas");
     }
 
     if (hResidual) {
@@ -335,6 +387,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         cRes->Draw();
         f->cd();
         cRes->Write("PrimaryResidualEnergyCanvas", TObject::kOverwrite);
+        saveCanvas(cRes, "PrimaryResidualEnergyCanvas");
     }
 
     if (hEndVol) {
@@ -377,6 +430,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         cEnd->Draw();
         f->cd();
         cEnd->Write("PrimaryEndVolumeCanvas", TObject::kOverwrite);
+        saveCanvas(cEnd, "PrimaryEndVolumeCanvas");
     }
 
     if (hStepLen) {
@@ -413,6 +467,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         cStep->Draw();
         f->cd();
         cStep->Write("StepLengthAl2O3Canvas", TObject::kOverwrite);
+        saveCanvas(cStep, "StepLengthAl2O3Canvas");
     }
 
     if (hEdepVsSteps) {
@@ -448,6 +503,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c4->Draw();
         f->cd();
         c4->Write("EdepPrimaryVsStepsCanvas", TObject::kOverwrite);
+        saveCanvas(c4, "EdepPrimaryVsStepsCanvas");
     }
 
     if (hResVsEnd) {
@@ -489,6 +545,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c5->Draw();
         f->cd();
         c5->Write("ResidualEnergyVsEndVolumeCanvas", TObject::kOverwrite);
+        saveCanvas(c5, "ResidualEnergyVsEndVolumeCanvas");
     }
 
     if (hResVsProc) {
@@ -532,6 +589,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c6->Draw();
         f->cd();
         c6->Write("ResidualEnergyVsLastProcessCanvas", TObject::kOverwrite);
+        saveCanvas(c6, "ResidualEnergyVsLastProcessCanvas");
     }
 
     if (hResVsStop) {
@@ -575,6 +633,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         c7->Draw();
         f->cd();
         c7->Write("ResidualEnergyVsStopStatusCanvas", TObject::kOverwrite);
+        saveCanvas(c7, "ResidualEnergyVsStopStatusCanvas");
     }
 
     f->Close();

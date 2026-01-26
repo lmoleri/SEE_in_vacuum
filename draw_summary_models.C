@@ -318,9 +318,56 @@ void draw_summary_models(const char* dirPai,
         leg2->Draw();
         c2->Update();
 
+        TString canvasNameStepLen = Form("StepLengthModels_E%lld", kv.first);
+        TCanvas* c3 = new TCanvas(canvasNameStepLen, "Step length models", 900, 700);
+        c3->SetGrid();
+        c3->SetLeftMargin(0.15);
+
+        TLegend* leg3 = new TLegend(0.45, 0.65, 0.78, 0.88);
+        leg3->SetBorderSize(0);
+        leg3->SetFillStyle(0);
+        leg3->SetTextSize(0.03);
+
+        bool firstStepLen = true;
+        for (const auto& entry : sorted) {
+            TFile* f = TFile::Open(entry.path.c_str(), "READ");
+            if (!f || f->IsZombie()) {
+                continue;
+            }
+            TH1* h = (TH1*)f->Get("StepLengthAl2O3");
+            if (!h) {
+                f->Close();
+                continue;
+            }
+            TString cloneName = Form("StepLength_%s_E%lld", entry.model.c_str(), kv.first);
+            TH1* hc = (TH1*)h->Clone(cloneName);
+            if (!hc) {
+                f->Close();
+                continue;
+            }
+            hc->SetDirectory(nullptr);
+            f->Close();
+            int color = modelColor.count(entry.model) ? modelColor[entry.model] : kBlack;
+            hc->SetLineColor(color);
+            hc->SetLineWidth(4);
+            if (firstStepLen) {
+                hc->SetTitle(Form("Step length in Al_{2}O_{3} (%s)", titleSuffix.Data()));
+                hc->GetYaxis()->SetTitleOffset(1.35);
+                hc->GetYaxis()->SetLabelSize(0.035);
+                hc->Draw("HIST");
+                firstStepLen = false;
+            } else {
+                hc->Draw("HIST SAME");
+            }
+            leg3->AddEntry(hc, entry.model.c_str(), "l");
+        }
+        leg3->Draw();
+        c3->Update();
+
         out->cd();
         c1->Write(canvasName, TObject::kOverwrite);
         c2->Write(canvasNameSteps, TObject::kOverwrite);
+        c3->Write(canvasNameStepLen, TObject::kOverwrite);
     }
 
     out->Write("", TObject::kOverwrite);

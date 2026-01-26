@@ -79,8 +79,10 @@ void RunAction::BeginOfRunAction(const G4Run*)
         if (maxEnergy <= 0.) {
             maxEnergy = 200. * eV;
         }
-        const G4int primaryBins =
-            std::max(1, static_cast<G4int>(std::ceil(maxEnergy / eV)));
+        const G4int maxPrimaryBins = 200000;
+        const G4double idealBins = std::ceil(maxEnergy / eV);
+        const G4int primaryBins = std::max(
+            1, static_cast<G4int>(std::min(idealBins, static_cast<G4double>(maxPrimaryBins))));
 
         G4int histoId = analysisManager->CreateH1(
             "EdepPrimary",

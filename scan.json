@@ -3,20 +3,11 @@
     5
   ],
   "primary_energy_MeV": [
-    0.0001,
-    0.0002,
-    0.0003,
-    0.0004,
-    0.0005,
-    0.0006,
-    0.0007,
-    0.0008,
-    0.0009,
-    0.001
+    4000.0
   ],
   "em_model": "Penelope",
-  "primary_particle": "e-",
+  "primary_particle": "mu-",
   "pai_enabled": false,
   "events": 10000,
-  "output_dir": "results/scan_thick5nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope"
+  "output_dir": "results/scan_thick5nm_particlemu-_energy4GeV_events10000_modelPenelope"
 }
