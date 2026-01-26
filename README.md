@@ -111,6 +111,9 @@ Run the ROOT macro to draw and save canvases (with annotations) into the ROOT fi
 root -l /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C
 ```
 
+When run on scan outputs, canvases are also exported to `plots/` as `.root` and `.pdf`,
+mirroring the `results/` subfolder structure.
+
 To plot a specific file from a parametric scan:
 ```bash
 root -l '/Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C("SEE_in_vacuum_thick20nm_energy1MeV.root")'
@@ -125,6 +128,17 @@ To create summary ROOT files with overlapping histograms and legends (one per pa
 ```bash
 bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summary.sh /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
 ```
+
+To compare models per energy (one canvas per energy value):
+```bash
+bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summary_models.sh \
+  /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_*_modelPAI \
+  /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_*_modelLivermore \
+  /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_*_modelPenelope \
+  /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/summary_models.root
+```
+
+Model comparison canvases are also exported to `plots/` alongside the summary root file.
 
 Notes:
 - The energy deposition plot uses log Y scale by default.

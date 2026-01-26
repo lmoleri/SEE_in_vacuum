@@ -203,9 +203,9 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     // Draw histogram with the normal default style
     h->SetTitle(Form("Primary %s energy deposition in Al_{2}O_{3} (%s)",
                      particleText.c_str(), modelText.c_str()));
-    const double xMaxEv = h->GetXaxis()->GetXmax();
-    if (xMaxEv > 0.) {
-        h->GetXaxis()->SetRangeUser(0.0, xMaxEv);
+    const double edepMaxEdge = maxNonEmptyEdge(h);
+    if (edepMaxEdge > 0.) {
+        h->GetXaxis()->SetRangeUser(0.0, edepMaxEdge);
     }
     h->Draw("HIST");
 
@@ -444,6 +444,10 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hStepLen->SetLineWidth(3);
         hStepLen->SetTitle(Form("Step length in Al_{2}O_{3} (%s, %s)",
                                 particleText.c_str(), modelText.c_str()));
+        const double stepLenMaxEdge = maxNonEmptyEdge(hStepLen);
+        if (stepLenMaxEdge > 0.0) {
+            hStepLen->GetXaxis()->SetRangeUser(0.0, stepLenMaxEdge);
+        }
         hStepLen->Draw("HIST");
 
         TLatex infoStep;

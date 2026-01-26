@@ -299,6 +299,7 @@ void draw_summary(const char* scanDir,
         std::map<double, std::vector<std::pair<double, double>>> mpvByEnergy;
 
         double maxPrimaryEnergyMeV = 0.0;
+        double maxPrimaryEdgeEv = 0.0;
         double maxStepsEdge = 0.0;
         for (const auto& entry : particleEntries) {
             if (entry.energy > maxPrimaryEnergyMeV) {
@@ -320,6 +321,13 @@ void draw_summary(const char* scanDir,
             printf("Warning: missing histograms in %s\n", filePath.Data());
             f->Close();
             continue;
+        }
+        const int lastPrimaryBin = hPrimary->FindLastBinAbove(0.0);
+        if (lastPrimaryBin > 0) {
+            const double edge = hPrimary->GetXaxis()->GetBinUpEdge(lastPrimaryBin);
+            if (edge > maxPrimaryEdgeEv) {
+                maxPrimaryEdgeEv = edge;
+            }
         }
         const int lastStepsBin = hSteps->FindLastBinAbove(0.0);
         if (lastStepsBin > 0) {
@@ -379,8 +387,8 @@ void draw_summary(const char* scanDir,
                                          particleText.Data(), modelTitle.Data()));
             hPrimaryClone->GetYaxis()->SetTitleOffset(1.35);
             hPrimaryClone->GetYaxis()->SetLabelSize(0.035);
-            if (maxPrimaryEnergyMeV > 0.) {
-                hPrimaryClone->GetXaxis()->SetRangeUser(0.0, maxPrimaryEnergyMeV * 1.0e6);
+            if (maxPrimaryEdgeEv > 0.0) {
+                hPrimaryClone->GetXaxis()->SetRangeUser(0.0, maxPrimaryEdgeEv);
             }
             hPrimaryClone->Draw("HIST");
             firstPrimary = false;

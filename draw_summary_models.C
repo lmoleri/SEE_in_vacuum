@@ -247,6 +247,25 @@ void draw_summary_models(const char* dirPai,
         leg1->SetFillStyle(0);
         leg1->SetTextSize(0.03);
 
+        double maxPrimaryEdgeEv = 0.0;
+        for (const auto& entry : sorted) {
+            TFile* f = TFile::Open(entry.path.c_str(), "READ");
+            if (!f || f->IsZombie()) {
+                continue;
+            }
+            TH1* h = (TH1*)f->Get("EdepPrimary");
+            if (h) {
+                const int lastBin = h->FindLastBinAbove(0.0);
+                if (lastBin > 0) {
+                    const double edge = h->GetXaxis()->GetBinUpEdge(lastBin);
+                    if (edge > maxPrimaryEdgeEv) {
+                        maxPrimaryEdgeEv = edge;
+                    }
+                }
+            }
+            f->Close();
+        }
+
         bool first = true;
         for (const auto& entry : sorted) {
             TFile* f = TFile::Open(entry.path.c_str(), "READ");
@@ -273,8 +292,8 @@ void draw_summary_models(const char* dirPai,
                 hc->SetTitle(Form("EdepPrimary model comparison (%s)", titleSuffix.Data()));
                 hc->GetYaxis()->SetTitleOffset(1.35);
                 hc->GetYaxis()->SetLabelSize(0.035);
-                if (energyMeV > 0.) {
-                    hc->GetXaxis()->SetRangeUser(0.0, energyMeV * 1.0e6);
+                if (maxPrimaryEdgeEv > 0.0) {
+                    hc->GetXaxis()->SetRangeUser(0.0, maxPrimaryEdgeEv);
                 }
                 hc->Draw("HIST");
                 first = false;
@@ -364,6 +383,25 @@ void draw_summary_models(const char* dirPai,
         leg3->SetFillStyle(0);
         leg3->SetTextSize(0.03);
 
+        double maxStepLenEdge = 0.0;
+        for (const auto& entry : sorted) {
+            TFile* f = TFile::Open(entry.path.c_str(), "READ");
+            if (!f || f->IsZombie()) {
+                continue;
+            }
+            TH1* h = (TH1*)f->Get("StepLengthAl2O3");
+            if (h) {
+                const int lastBin = h->FindLastBinAbove(0.0);
+                if (lastBin > 0) {
+                    const double edge = h->GetXaxis()->GetBinUpEdge(lastBin);
+                    if (edge > maxStepLenEdge) {
+                        maxStepLenEdge = edge;
+                    }
+                }
+            }
+            f->Close();
+        }
+
         bool firstStepLen = true;
         for (const auto& entry : sorted) {
             TFile* f = TFile::Open(entry.path.c_str(), "READ");
@@ -390,6 +428,9 @@ void draw_summary_models(const char* dirPai,
                 hc->SetTitle(Form("Step length in Al_{2}O_{3} (%s)", titleSuffix.Data()));
                 hc->GetYaxis()->SetTitleOffset(1.35);
                 hc->GetYaxis()->SetLabelSize(0.035);
+                if (maxStepLenEdge > 0.0) {
+                    hc->GetXaxis()->SetRangeUser(0.0, maxStepLenEdge);
+                }
                 hc->Draw("HIST");
                 firstStepLen = false;
             } else {
