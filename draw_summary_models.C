@@ -308,6 +308,7 @@ void draw_summary_models(const char* dirPai,
         TString canvasNameSteps = Form("EdepInteractionsModels_E%lld", kv.first);
         TCanvas* c2 = new TCanvas(canvasNameSteps, "EdepInteractions models", 900, 700);
         c2->SetGrid();
+        c2->SetLogy();
         c2->SetLeftMargin(0.15);
 
         TLegend* leg2 = new TLegend(0.45, 0.65, 0.78, 0.88);
@@ -376,6 +377,7 @@ void draw_summary_models(const char* dirPai,
         TString canvasNameStepLen = Form("StepLengthModels_E%lld", kv.first);
         TCanvas* c3 = new TCanvas(canvasNameStepLen, "Step length models", 900, 700);
         c3->SetGrid();
+        c3->SetLogy();
         c3->SetLeftMargin(0.15);
 
         TLegend* leg3 = new TLegend(0.45, 0.65, 0.78, 0.88);

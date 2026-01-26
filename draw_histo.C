@@ -131,13 +131,33 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     };
     std::string particleText = particleLabel(primaryParticle);
     std::string modelText = modelLabel(emModel);
-    auto maxNonEmptyEdge = [](TH1* hist) {
-        if (!hist) return 0.0;
+    auto trimXAxis = [](TH1* hist) {
+        if (!hist) return;
         const int lastBin = hist->FindLastBinAbove(0.0);
-        if (lastBin <= 0) {
-            return 0.0;
+        if (lastBin > 0) {
+            hist->GetXaxis()->SetRangeUser(0.0, hist->GetXaxis()->GetBinUpEdge(lastBin));
         }
-        return hist->GetXaxis()->GetBinUpEdge(lastBin);
+    };
+    auto trimAxes = [](TH2* hist) {
+        if (!hist) return;
+        int maxX = 0;
+        int maxY = 0;
+        const int nx = hist->GetNbinsX();
+        const int ny = hist->GetNbinsY();
+        for (int ix = 1; ix <= nx; ++ix) {
+            for (int iy = 1; iy <= ny; ++iy) {
+                if (hist->GetBinContent(ix, iy) > 0.0) {
+                    if (ix > maxX) maxX = ix;
+                    if (iy > maxY) maxY = iy;
+                }
+            }
+        }
+        if (maxX > 0) {
+            hist->GetXaxis()->SetRangeUser(0.0, hist->GetXaxis()->GetBinUpEdge(maxX));
+        }
+        if (maxY > 0) {
+            hist->GetYaxis()->SetRangeUser(0.0, hist->GetYaxis()->GetBinUpEdge(maxY));
+        }
     };
     std::string plotDir;
     {
@@ -203,10 +223,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     // Draw histogram with the normal default style
     h->SetTitle(Form("Primary %s energy deposition in Al_{2}O_{3} (%s)",
                      particleText.c_str(), modelText.c_str()));
-    const double edepMaxEdge = maxNonEmptyEdge(h);
-    if (edepMaxEdge > 0.) {
-        h->GetXaxis()->SetRangeUser(0.0, edepMaxEdge);
-    }
+    trimXAxis(h);
     h->Draw("HIST");
 
     // Add info text
@@ -237,6 +254,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     // Create a canvas for the interaction count histogram
     TCanvas* c2 = new TCanvas("c2", "Energy Deposition Steps", 800, 600);
     c2->SetGrid();
+    c2->SetLogy();
     c2->SetLeftMargin(0.15);
 
     // Format Y axis to avoid label overlap and use scientific notation
@@ -249,10 +267,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
 
     hSteps->SetTitle(Form("Energy-depositing steps per event (%s, %s)",
                           particleText.c_str(), modelText.c_str()));
-    const double stepsMaxEdge = maxNonEmptyEdge(hSteps);
-    if (stepsMaxEdge > 0.0) {
-        hSteps->GetXaxis()->SetRangeUser(0.0, stepsMaxEdge);
-    }
+    trimXAxis(hSteps);
     hSteps->Draw("HIST");
 
     // Add info text
@@ -290,6 +305,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hStep->SetLineWidth(3);
         hStep->SetTitle(Form("Energy deposition per step (%s, %s)",
                              particleText.c_str(), modelText.c_str()));
+        trimXAxis(hStep);
         hStep->Draw("HIST");
 
         TLatex info3;
@@ -356,6 +372,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     if (hResidual) {
         TCanvas* cRes = new TCanvas("cRes", "Primary Residual Energy", 800, 600);
         cRes->SetGrid();
+        cRes->SetLogy();
         cRes->SetLeftMargin(0.15);
 
         hResidual->GetYaxis()->SetTitleOffset(1.35);
@@ -364,6 +381,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hResidual->SetLineWidth(3);
         hResidual->SetTitle(Form("Primary residual energy (%s, %s)",
                                  particleText.c_str(), modelText.c_str()));
+        trimXAxis(hResidual);
         hResidual->Draw("HIST");
 
         TLatex infoRes;
@@ -393,6 +411,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     if (hEndVol) {
         TCanvas* cEnd = new TCanvas("cEnd", "Primary End Volume", 800, 600);
         cEnd->SetGrid();
+        cEnd->SetLogy();
         cEnd->SetLeftMargin(0.15);
 
         hEndVol->GetYaxis()->SetTitleOffset(1.35);
@@ -436,6 +455,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     if (hStepLen) {
         TCanvas* cStep = new TCanvas("cStep", "Step Length in Al2O3", 800, 600);
         cStep->SetGrid();
+        cStep->SetLogy();
         cStep->SetLeftMargin(0.15);
 
         hStepLen->GetYaxis()->SetTitleOffset(1.35);
@@ -444,10 +464,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         hStepLen->SetLineWidth(3);
         hStepLen->SetTitle(Form("Step length in Al_{2}O_{3} (%s, %s)",
                                 particleText.c_str(), modelText.c_str()));
-        const double stepLenMaxEdge = maxNonEmptyEdge(hStepLen);
-        if (stepLenMaxEdge > 0.0) {
-            hStepLen->GetXaxis()->SetRangeUser(0.0, stepLenMaxEdge);
-        }
+        trimXAxis(hStepLen);
         hStepLen->Draw("HIST");
 
         TLatex infoStep;
@@ -484,6 +501,7 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
                                     particleText.c_str(), modelText.c_str()));
         hEdepVsSteps->GetYaxis()->SetTitleOffset(1.35);
         hEdepVsSteps->GetYaxis()->SetLabelSize(0.035);
+        trimAxes(hEdepVsSteps);
         hEdepVsSteps->Draw("COLZ");
 
         TLatex info4;
