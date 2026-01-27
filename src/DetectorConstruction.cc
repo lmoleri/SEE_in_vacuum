@@ -86,9 +86,9 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
         true);                      // check overlaps
 
     // Al2O3 layer - cylindrical disk
-    // Thickness and diameter are configurable (defaults: 20 nm, 100 nm)
+    // Thickness and diameter are configurable (defaults: 20 nm, 200 nm)
     G4double thickness = fSampleThickness > 0. ? fSampleThickness : 20.0 * nm;
-    G4double radius = 50.0 * nm;  // radius = diameter/2
+    G4double radius = 100.0 * nm;  // radius = diameter/2 (diameter = 200 nm)
 
     fSampleThickness = thickness;
     

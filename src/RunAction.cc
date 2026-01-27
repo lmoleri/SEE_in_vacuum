@@ -174,8 +174,10 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         // Create a 1D histogram for step length in Al2O3
         // ID 6: StepLengthAl2O3
+        // Use a larger range to accommodate longer steps, especially for higher energy electrons
+        // Minimum 100nm, maximum 10000nm (10 microns)
         const G4double thicknessNm = (fSampleThickness > 0.) ? fSampleThickness / nm : 0.0;
-        const G4double maxStepLenNm = std::max(20.0, std::min(thicknessNm * 10.0, 10000.0));
+        const G4double maxStepLenNm = std::max(100.0, std::min(thicknessNm * 100.0, 10000.0));
         const G4double stepLenBinNm = 0.1;
         const G4int maxStepLenBins = 200000;
         const G4double idealStepLenBins = std::ceil(maxStepLenNm / stepLenBinNm);
