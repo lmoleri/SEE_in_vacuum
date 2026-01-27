@@ -120,9 +120,31 @@ TH1* OptimizeEdepPrimaryAxis(TH1* hist) {
     double dataMin, dataMax, range;
     if (rms < mean * 0.01) {
         // All data clustered around mean - use mean ± reasonable range
-        range = std::max(mean * 0.2, 1.0); // 20% of mean or at least 1 eV
-        dataMin = std::max(0.0, mean - range);
-        dataMax = mean + range;
+        // For very narrow distributions, ensure we capture the actual data range
+        // Find the actual min and max from non-empty bins
+        double actualMin = hist->GetXaxis()->GetXmax();
+        double actualMax = hist->GetXaxis()->GetXmin();
+        bool foundData = false;
+        for (int i = 1; i <= hist->GetNbinsX(); i++) {
+            if (hist->GetBinContent(i) > 0) {
+                foundData = true;
+                double binLow = hist->GetXaxis()->GetBinLowEdge(i);
+                double binUp = hist->GetXaxis()->GetBinUpEdge(i);
+                if (binLow < actualMin) actualMin = binLow;
+                if (binUp > actualMax) actualMax = binUp;
+            }
+        }
+        if (foundData) {
+            // Use actual data range with padding
+            range = std::max((actualMax - actualMin) * 1.2, std::max(mean * 0.2, 1.0));
+            dataMin = std::max(0.0, actualMin - range * 0.1);
+            dataMax = actualMax + range * 0.1;
+        } else {
+            // Fallback to mean-based range
+            range = std::max(mean * 0.2, 1.0);
+            dataMin = std::max(0.0, mean - range);
+            dataMax = mean + range;
+        }
     } else {
         // Data has spread - use mean ± 3*RMS for range
         dataMin = std::max(0.0, mean - 3.0 * rms);
@@ -191,40 +213,86 @@ TH1* OptimizeEdepPrimaryAxis(TH1* hist) {
         newHist->GetXaxis()->SetTitle(hist->GetXaxis()->GetTitle());
         newHist->GetYaxis()->SetTitle(hist->GetYaxis()->GetTitle());
         
-        // Fill new histogram from original
-        // For distributions with significant RMS, we need to preserve the spread
-        const double histMean = hist->GetMean();
-        const double histRMS = hist->GetRMS();
-        const double totalEntries = hist->GetEntries();
+        // Fill new histogram from original histogram's actual data
+        // Properly map bins from original to new histogram to avoid gaps
+        // For very narrow distributions (all data in one bin), use mean-based filling to preserve data location
+        const double mean = hist->GetMean();
+        const double rms = hist->GetRMS();
+        const bool isVeryNarrow = (rms < mean * 0.01) && (hist->GetNbinsX() > 1000); // Very narrow and original histogram has many bins
         
-        if (totalEntries > 0 && histMean > 0) {
-            if (histRMS < histMean * 0.01) {
-                // Narrow distribution - fill at mean
-                newHist->Fill(histMean, totalEntries);
-            } else {
-                // Wide distribution - need to approximate the distribution
-                // Since we don't have the actual distribution (all in one bin),
-                // we'll create a Gaussian-like approximation
-                // Fill multiple bins to approximate the distribution shape
-                const int nFillBins = std::min(100, newNbins / 2);
-                const double step = (dataMax - dataMin) / nFillBins;
-                for (int i = 0; i < nFillBins; i++) {
-                    const double x = dataMin + i * step + step / 2.0;
-                    // Approximate Gaussian distribution
-                    const double gauss = std::exp(-0.5 * std::pow((x - histMean) / histRMS, 2.0));
-                    const double weight = totalEntries * gauss / (histRMS * std::sqrt(2.0 * M_PI));
-                    if (weight > 0.1) { // Only fill if weight is significant
-                        newHist->Fill(x, weight);
-                    }
+        if (isVeryNarrow) {
+            // For very narrow distributions, fill at the mean location to preserve the actual data position
+            // This avoids artificial spreading when a single wide bin maps to multiple narrow bins
+            if (mean >= newMin && mean <= newMax) {
+                int bin = newHist->GetXaxis()->FindBin(mean);
+                if (bin >= 1 && bin <= newHist->GetNbinsX()) {
+                    newHist->SetBinContent(bin, hist->GetEntries());
+                    newHist->SetEntries(hist->GetEntries());
                 }
             }
         } else {
-            // Fallback: fill from bin centers if mean is not available
+            // For wider distributions, use proper bin mapping
             for (int i = 1; i <= hist->GetNbinsX(); i++) {
                 const double content = hist->GetBinContent(i);
                 if (content > 0) {
+                    const double binLow = hist->GetXaxis()->GetBinLowEdge(i);
+                    const double binUp = hist->GetXaxis()->GetBinUpEdge(i);
                     const double binCenter = hist->GetXaxis()->GetBinCenter(i);
-                    newHist->Fill(binCenter, content);
+                    
+                    // Only process if bin overlaps with new histogram range
+                    if (binUp >= newMin && binLow <= newMax) {
+                        // Find which bins in the new histogram this bin overlaps with
+                        int newBinLow = newHist->GetXaxis()->FindBin(binLow);
+                        int newBinUp = newHist->GetXaxis()->FindBin(binUp);
+                        
+                        // Ensure bins are within valid range
+                        if (newBinLow < 1) newBinLow = 1;
+                        if (newBinUp > newHist->GetNbinsX()) newBinUp = newHist->GetNbinsX();
+                        
+                        if (newBinLow == newBinUp) {
+                            // Single bin - fill directly
+                            newHist->SetBinContent(newBinLow, newHist->GetBinContent(newBinLow) + content);
+                        } else {
+                            // Multiple bins - distribute content proportionally
+                            // Calculate overlap fraction for each bin
+                            for (int j = newBinLow; j <= newBinUp; j++) {
+                                double newBinLowEdge = newHist->GetXaxis()->GetBinLowEdge(j);
+                                double newBinUpEdge = newHist->GetXaxis()->GetBinUpEdge(j);
+                                
+                                // Calculate overlap
+                                double overlapLow = std::max(binLow, newBinLowEdge);
+                                double overlapUp = std::min(binUp, newBinUpEdge);
+                                double overlap = std::max(0.0, overlapUp - overlapLow);
+                                double originalBinWidth = binUp - binLow;
+                                
+                                if (overlap > 0 && originalBinWidth > 0) {
+                                    double fraction = overlap / originalBinWidth;
+                                    newHist->SetBinContent(j, newHist->GetBinContent(j) + content * fraction);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Update entries to match sum of bin contents
+        double totalContent = 0;
+        for (int i = 1; i <= newHist->GetNbinsX(); i++) {
+            totalContent += newHist->GetBinContent(i);
+        }
+        newHist->SetEntries(totalContent);
+        
+        // If no data was filled (shouldn't happen, but safety check),
+        // fall back to mean-based filling
+        if (totalContent == 0) {
+            const double histMean = hist->GetMean();
+            const double totalEntries = hist->GetEntries();
+            if (totalEntries > 0 && histMean > 0 && histMean >= newMin && histMean <= newMax) {
+                int bin = newHist->GetXaxis()->FindBin(histMean);
+                if (bin >= 1 && bin <= newHist->GetNbinsX()) {
+                    newHist->SetBinContent(bin, totalEntries);
+                    newHist->SetEntries(totalEntries);
                 }
             }
         }
@@ -535,10 +603,135 @@ void draw_summary_models(const char* dirPai,
                     pad->Update();
                 }
             }
+            
+            // Find maximum bin content across all histograms to ensure y-axis accommodates saturated bins
+            double maxBinContent = 0.0;
+            obj = prims->First();
+            while (obj) {
+                if (obj->InheritsFrom("TH1")) {
+                    TH1* h = (TH1*)obj;
+                    if (TString(h->GetName()).Contains("EdepPrimary")) {
+                        // Check all bins in the visible range (including overflow if visible)
+                        const int firstBin = h->GetXaxis()->GetFirst();
+                        const int lastBin = h->GetXaxis()->GetLast();
+                        for (int i = firstBin; i <= lastBin; i++) {
+                            const double content = h->GetBinContent(i);
+                            if (content > maxBinContent) {
+                                maxBinContent = content;
+                            }
+                        }
+                        // Also check overflow bin if it's within the visible range
+                        const int overflowBin = h->GetNbinsX() + 1;
+                        if (overflowBin <= lastBin) {
+                            const double overflowContent = h->GetBinContent(overflowBin);
+                            if (overflowContent > maxBinContent) {
+                                maxBinContent = overflowContent;
+                            }
+                        }
+                    }
+                }
+                obj = prims->After(obj);
+            }
+            
+            // Set y-axis range to accommodate maximum bin content with padding
+            if (maxBinContent > 0.0) {
+                // Add 20% padding above the maximum to ensure saturated bins are visible
+                const double yMax = maxBinContent * 1.2;
+                // For log scale, ensure minimum is appropriate
+                const double yMin = c1->GetLogy() ? std::max(0.1, maxBinContent * 1e-6) : 0.0;
+                
+                obj = prims->First();
+                while (obj) {
+                    if (obj->InheritsFrom("TH1")) {
+                        TH1* h = (TH1*)obj;
+                        if (TString(h->GetName()).Contains("EdepPrimary")) {
+                            h->SetMinimum(yMin);
+                            h->SetMaximum(yMax);
+                        }
+                    }
+                    obj = prims->After(obj);
+                }
+            }
         }
         
         leg1->Draw();
         c1->Update();
+
+        // Create a zoomed version of EdepPrimaryModels (0-100eV range) for 1MeV electrons and 4GeV muons
+        TCanvas* c1zoom = nullptr;
+        TString canvasNameEdepZoom;
+        const long long energyEv = kv.first;
+        // Check if this is 1MeV (1000000 eV) for electrons or 4GeV (4000000000 eV) for muons
+        if (energyEv == 1000000 || energyEv == 4000000000) {
+            canvasNameEdepZoom = Form("EdepPrimaryModelsZoom_E%lld", kv.first);
+            c1zoom = new TCanvas(canvasNameEdepZoom, "EdepPrimary models (zoom 0-100eV)", 900, 700);
+            c1zoom->SetGrid();
+            c1zoom->SetLogy();
+            c1zoom->SetLeftMargin(0.15);
+
+            TLegend* leg1zoom = new TLegend(0.45, 0.65, 0.78, 0.88);
+            leg1zoom->SetBorderSize(0);
+            leg1zoom->SetFillStyle(0);
+            leg1zoom->SetTextSize(0.03);
+
+            // Reuse the same histograms but with zoomed range
+            bool firstEdepZoom = true;
+            for (const auto& entry : sorted) {
+                TFile* f = TFile::Open(entry.path.c_str(), "READ");
+                if (!f || f->IsZombie()) {
+                    continue;
+                }
+                TH1* h = (TH1*)f->Get("EdepPrimary");
+                if (!h) {
+                    f->Close();
+                    continue;
+                }
+                
+                // Clone first to detach from file
+                TH1* hClone = (TH1*)h->Clone("temp");
+                hClone->SetDirectory(nullptr);
+                f->Close();
+                
+                // Optimize the histogram
+                TH1* hOpt = OptimizeEdepPrimaryAxis(hClone);
+                bool hOptCreated = (hOpt != nullptr && hOpt != hClone);
+                
+                TString cloneName = Form("EdepPrimaryZoom_%s_E%lld", entry.model.c_str(), kv.first);
+                TH1* hc = (TH1*)hOpt->Clone(cloneName);
+                if (!hc) {
+                    if (hOptCreated && hOpt) delete hOpt;
+                    delete hClone;
+                    continue;
+                }
+                hc->SetDirectory(nullptr);
+                
+                // Clean up temporary histograms
+                if (hOptCreated && hOpt) delete hOpt;
+                delete hClone;
+                
+                RebinToMaxBins(hc, 2000);
+                int color = modelColor.count(entry.model) ? modelColor[entry.model] : kBlack;
+                hc->SetLineColor(color);
+                hc->SetLineWidth(4);
+                
+                // Set zoomed range (0-100eV)
+                hc->GetXaxis()->SetRangeUser(0.0, 100.0);
+                
+                if (firstEdepZoom) {
+                    hc->SetTitle(Form("Primary energy deposition in Al_{2}O_{3} - Zoom 0-100eV (%s)", titleSuffix.Data()));
+                    hc->GetYaxis()->SetTitleOffset(1.35);
+                    hc->GetYaxis()->SetLabelSize(0.035);
+                    hc->Draw("HIST");
+                    firstEdepZoom = false;
+                } else {
+                    hc->Draw("HIST SAME");
+                }
+                leg1zoom->AddEntry(hc, entry.model.c_str(), "l");
+            }
+            
+            leg1zoom->Draw();
+            c1zoom->Update();
+        }
 
         TString canvasNameSteps = Form("EdepInteractionsModels_E%lld", kv.first);
         TCanvas* c2 = new TCanvas(canvasNameSteps, "EdepInteractions models", 900, 700);
@@ -546,7 +739,7 @@ void draw_summary_models(const char* dirPai,
         c2->SetLogy();
         c2->SetLeftMargin(0.15);
 
-        TLegend* leg2 = new TLegend(0.45, 0.65, 0.78, 0.88);
+        TLegend* leg2 = new TLegend(0.65, 0.65, 0.88, 0.88);
         leg2->SetBorderSize(0);
         leg2->SetFillStyle(0);
         leg2->SetTextSize(0.03);
@@ -621,6 +814,8 @@ void draw_summary_models(const char* dirPai,
         leg3->SetFillStyle(0);
         leg3->SetTextSize(0.03);
 
+        // First pass: find the actual last non-empty bin across all histograms
+        // First pass: find the maximum last non-empty bin edge across all histograms
         double maxStepLenEdge = 0.0;
         for (const auto& entry : sorted) {
             TFile* f = TFile::Open(entry.path.c_str(), "READ");
@@ -638,6 +833,12 @@ void draw_summary_models(const char* dirPai,
                 }
             }
             f->Close();
+        }
+
+        // Calculate the range to use (trim after last non-empty bin with 5% padding)
+        double stepLenRangeMax = 0.0;
+        if (maxStepLenEdge > 0.0) {
+            stepLenRangeMax = maxStepLenEdge * 1.05;
         }
 
         bool firstStepLen = true;
@@ -667,9 +868,6 @@ void draw_summary_models(const char* dirPai,
                 hc->SetTitle(Form("Step length in Al_{2}O_{3} (%s)", titleSuffix.Data()));
                 hc->GetYaxis()->SetTitleOffset(1.35);
                 hc->GetYaxis()->SetLabelSize(0.035);
-                if (maxStepLenEdge > 0.0) {
-                    hc->GetXaxis()->SetRangeUser(0.0, maxStepLenEdge);
-                }
                 hc->Draw("HIST");
                 firstStepLen = false;
             } else {
@@ -677,16 +875,137 @@ void draw_summary_models(const char* dirPai,
             }
             leg3->AddEntry(hc, entry.model.c_str(), "l");
         }
+        
+        // After drawing, find the actual last non-empty bin across all drawn histograms and trim
+        double actualMaxStepLenEdge = 0.0;
+        TList* prims3 = c3->GetListOfPrimitives();
+        if (prims3) {
+            TObject* obj = prims3->First();
+            while (obj) {
+                if (obj->InheritsFrom("TH1")) {
+                    TH1* h = (TH1*)obj;
+                    if (TString(h->GetName()).Contains("StepLength")) {
+                        const int lastBin = h->FindLastBinAbove(0.0);
+                        if (lastBin > 0) {
+                            const double edge = h->GetXaxis()->GetBinUpEdge(lastBin);
+                            if (edge > actualMaxStepLenEdge) {
+                                actualMaxStepLenEdge = edge;
+                            }
+                        }
+                    }
+                }
+                obj = prims3->After(obj);
+            }
+            
+            // Set range to trim after the last non-empty bin (with 5% padding)
+            if (actualMaxStepLenEdge > 0.0) {
+                const double paddedMax = actualMaxStepLenEdge * 1.05;
+                // Find maximum histogram range
+                obj = prims3->First();
+                double maxHistRange = 0.0;
+                while (obj) {
+                    if (obj->InheritsFrom("TH1")) {
+                        TH1* h = (TH1*)obj;
+                        if (TString(h->GetName()).Contains("StepLength")) {
+                            const double histMax = h->GetXaxis()->GetXmax();
+                            if (histMax > maxHistRange) {
+                                maxHistRange = histMax;
+                            }
+                        }
+                    }
+                    obj = prims3->After(obj);
+                }
+                const double finalMax = std::min(paddedMax, maxHistRange);
+                
+                // Set range on all histograms
+                obj = prims3->First();
+                while (obj) {
+                    if (obj->InheritsFrom("TH1")) {
+                        TH1* h = (TH1*)obj;
+                        if (TString(h->GetName()).Contains("StepLength")) {
+                            h->GetXaxis()->SetRangeUser(0.0, finalMax);
+                        }
+                    }
+                    obj = prims3->After(obj);
+                }
+                
+                // Force canvas update to apply range changes
+                c3->Modified();
+                c3->Update();
+            }
+        }
+        
         leg3->Draw();
         c3->Update();
+
+        // Create a zoomed version of StepLengthModels (0-10nm range)
+        TString canvasNameStepLenZoom = Form("StepLengthModelsZoom_E%lld", kv.first);
+        TCanvas* c3zoom = new TCanvas(canvasNameStepLenZoom, "Step length models (zoom 0-10nm)", 900, 700);
+        c3zoom->SetGrid();
+        c3zoom->SetLogy();
+        c3zoom->SetLeftMargin(0.15);
+
+        TLegend* leg3zoom = new TLegend(0.45, 0.65, 0.78, 0.88);
+        leg3zoom->SetBorderSize(0);
+        leg3zoom->SetFillStyle(0);
+        leg3zoom->SetTextSize(0.03);
+
+        // Reuse the same histograms but with zoomed range
+        bool firstStepLenZoom = true;
+        for (const auto& entry : sorted) {
+            TFile* f = TFile::Open(entry.path.c_str(), "READ");
+            if (!f || f->IsZombie()) {
+                continue;
+            }
+            TH1* h = (TH1*)f->Get("StepLengthAl2O3");
+            if (!h) {
+                f->Close();
+                continue;
+            }
+            TString cloneName = Form("StepLengthZoom_%s_E%lld", entry.model.c_str(), kv.first);
+            TH1* hc = (TH1*)h->Clone(cloneName);
+            if (!hc) {
+                f->Close();
+                continue;
+            }
+            hc->SetDirectory(nullptr);
+            f->Close();
+            RebinToMaxBins(hc, 2000);
+            int color = modelColor.count(entry.model) ? modelColor[entry.model] : kBlack;
+            hc->SetLineColor(color);
+            hc->SetLineWidth(4);
+            
+            // Set zoomed range (0-10nm)
+            hc->GetXaxis()->SetRangeUser(0.0, 10.0);
+            
+            if (firstStepLenZoom) {
+                hc->SetTitle(Form("Step length in Al_{2}O_{3} - Zoom 0-10nm (%s)", titleSuffix.Data()));
+                hc->GetYaxis()->SetTitleOffset(1.35);
+                hc->GetYaxis()->SetLabelSize(0.035);
+                hc->Draw("HIST");
+                firstStepLenZoom = false;
+            } else {
+                hc->Draw("HIST SAME");
+            }
+            leg3zoom->AddEntry(hc, entry.model.c_str(), "l");
+        }
+        
+        leg3zoom->Draw();
+        c3zoom->Update();
 
         out->cd();
         c1->Write(canvasName, TObject::kOverwrite);
         c2->Write(canvasNameSteps, TObject::kOverwrite);
         c3->Write(canvasNameStepLen, TObject::kOverwrite);
+        c3zoom->Write(canvasNameStepLenZoom, TObject::kOverwrite);
+        if (c1zoom) {
+            c1zoom->Write(canvasNameEdepZoom, TObject::kOverwrite);
+            saveCanvas(c1zoom, canvasNameEdepZoom);
+        }
         saveCanvas(c1, canvasName);
         saveCanvas(c2, canvasNameSteps);
         saveCanvas(c3, canvasNameStepLen);
+        saveCanvas(c3zoom, canvasNameStepLenZoom);
     }
 
     out->Write("", TObject::kOverwrite);
