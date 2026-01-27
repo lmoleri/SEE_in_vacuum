@@ -138,6 +138,126 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
             hist->GetXaxis()->SetRangeUser(0.0, hist->GetXaxis()->GetBinUpEdge(lastBin));
         }
     };
+    // Dynamic rebinning and range setting for EdepPrimary
+    // Creates a new histogram with appropriate binning for the actual data range
+    auto optimizeEdepPrimaryAxis = [](TH1* hist) -> TH1* {
+        if (!hist || hist->GetEntries() == 0) return hist;
+        
+        // Find actual data range (min and max values, not just bin edges)
+        double dataMin = hist->GetXaxis()->GetXmax();
+        double dataMax = hist->GetXaxis()->GetXmin();
+        bool foundData = false;
+        
+        for (int i = 1; i <= hist->GetNbinsX(); i++) {
+            if (hist->GetBinContent(i) > 0) {
+                const double binCenter = hist->GetXaxis()->GetBinCenter(i);
+                if (binCenter < dataMin) dataMin = binCenter;
+                if (binCenter > dataMax) dataMax = binCenter;
+                foundData = true;
+            }
+        }
+        
+        if (!foundData) return hist;
+        
+        // Calculate range and determine if we need to create a new histogram
+        double range = dataMax - dataMin;
+        // If all data is in one bin (or very narrow range), use a reasonable range around the mean
+        if (range < 1.0) {
+            const double mean = (dataMin + dataMax) / 2.0;
+            // Use 10% of the mean as range, or at least 1 eV
+            range = std::max(mean * 0.1, 1.0);
+            dataMin = mean - range / 2.0;
+            dataMax = mean + range / 2.0;
+        }
+        const double currentBinWidth = hist->GetBinWidth(1);
+        const double currentRange = hist->GetXaxis()->GetXmax() - hist->GetXaxis()->GetXmin();
+        
+        // If the histogram range is much larger than the data range (e.g., muons with 0-4e9 eV range but ~3 eV data)
+        // or if binning is too coarse, create a new histogram with better binning
+        const bool needsRebinning = (currentRange > range * 10.0) || (currentBinWidth > range / 50.0);
+        
+        if (needsRebinning) {
+            // Determine appropriate binning: aim for ~200 bins in the data range
+            const int targetBins = 200;
+            const int minBins = 50; // Minimum bins to ensure good visualization
+            double idealBinWidth = range / targetBins;
+            
+            // Round to a nice bin width (powers of 10 or common fractions)
+            double binWidth = idealBinWidth;
+            if (binWidth < 0.01) {
+                binWidth = 0.01; // 0.01 eV bins for very small ranges
+            } else if (binWidth < 0.1) {
+                binWidth = 0.1; // 0.1 eV bins
+            } else if (binWidth < 1.0) {
+                binWidth = 1.0; // 1 eV bins
+            } else if (binWidth < 10.0) {
+                binWidth = 10.0; // 10 eV bins
+            } else {
+                // Round to nearest power of 10
+                double log10 = std::log10(binWidth);
+                binWidth = std::pow(10.0, std::floor(log10 + 0.5));
+            }
+            
+            // Add padding (20% on each side, but at least 2*binWidth)
+            const double padding = std::max(range * 0.2, binWidth * 2.0);
+            const double newMin = std::max(0.0, dataMin - padding);
+            const double newMax = dataMax + padding;
+            const double newRange = newMax - newMin;
+            
+            // Calculate number of bins, ensuring minimum
+            int newNbins = static_cast<int>(std::ceil(newRange / binWidth));
+            if (newNbins < minBins) {
+                // Adjust bin width to get at least minBins
+                binWidth = newRange / minBins;
+                newNbins = minBins;
+            }
+            
+            // Ensure we have at least 1 bin
+            if (newNbins < 1) newNbins = 1;
+            
+            // Create new histogram with appropriate range and binning
+            TH1* newHist = new TH1D(Form("%s_optimized", hist->GetName()),
+                                   hist->GetTitle(),
+                                   newNbins, newMin, newMax);
+            newHist->SetDirectory(nullptr);
+            
+            // Copy style
+            newHist->SetLineColor(hist->GetLineColor());
+            newHist->SetLineWidth(hist->GetLineWidth());
+            newHist->SetFillColor(hist->GetFillColor());
+            newHist->SetFillStyle(hist->GetFillStyle());
+            
+            // Copy axis titles
+            newHist->GetXaxis()->SetTitle(hist->GetXaxis()->GetTitle());
+            newHist->GetYaxis()->SetTitle(hist->GetYaxis()->GetTitle());
+            
+            // Fill new histogram from original
+            // Use the histogram's mean value to fill, preserving the total entries
+            const double histMean = hist->GetMean();
+            const double totalEntries = hist->GetEntries();
+            if (totalEntries > 0 && histMean > 0) {
+                // Fill at the mean value with the total number of entries
+                // This preserves the distribution when all data is in one bin
+                newHist->Fill(histMean, totalEntries);
+            } else {
+                // Fallback: fill from bin centers if mean is not available
+                for (int i = 1; i <= hist->GetNbinsX(); i++) {
+                    const double content = hist->GetBinContent(i);
+                    if (content > 0) {
+                        const double binCenter = hist->GetXaxis()->GetBinCenter(i);
+                        newHist->Fill(binCenter, content);
+                    }
+                }
+            }
+            
+            return newHist;
+        } else {
+            // Just set the range appropriately
+            const double padding = range * 0.1;
+            hist->GetXaxis()->SetRangeUser(std::max(0.0, dataMin - padding), dataMax + padding);
+            return hist;
+        }
+    };
     auto trimAxes = [](TH2* hist) {
         if (!hist) return;
         int maxX = 0;
@@ -206,6 +326,11 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         canvas->SaveAs(pdfPath.c_str());
     };
 
+    // Optimize EdepPrimary histogram binning and range
+    TH1* hOptimized = optimizeEdepPrimaryAxis(h);
+    TH1* hToDraw = hOptimized ? hOptimized : h;
+    bool hOptimizedCreated = (hOptimized != nullptr && hOptimized != h);
+
     // Create a canvas
     TCanvas* c1 = new TCanvas("c1", "Energy Deposition", 800, 600);
     c1->SetGrid();
@@ -213,18 +338,17 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     c1->SetLeftMargin(0.15);
     
     // Format Y axis to avoid label overlap and use scientific notation
-    h->GetYaxis()->SetTitleOffset(1.35);
-    h->GetYaxis()->SetLabelSize(0.035);
+    hToDraw->GetYaxis()->SetTitleOffset(1.35);
+    hToDraw->GetYaxis()->SetLabelSize(0.035);
 
     // Style: magenta line with thicker width
-    h->SetLineColor(kMagenta + 1);
-    h->SetLineWidth(3);
+    hToDraw->SetLineColor(kMagenta + 1);
+    hToDraw->SetLineWidth(3);
 
     // Draw histogram with the normal default style
-    h->SetTitle(Form("Primary %s energy deposition in Al_{2}O_{3} (%s)",
+    hToDraw->SetTitle(Form("Primary %s energy deposition in Al_{2}O_{3} (%s)",
                      particleText.c_str(), modelText.c_str()));
-    trimXAxis(h);
-    h->Draw("HIST");
+    hToDraw->Draw("HIST");
 
     // Add info text
     TLatex info1;
@@ -250,6 +374,11 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     f->cd();
     c1->Write("EdepPrimaryCanvas", TObject::kOverwrite);
     saveCanvas(c1, "EdepPrimaryCanvas");
+    
+    // Clean up rebinned histogram if created
+    if (hOptimizedCreated && hOptimized) {
+        delete hOptimized;
+    }
 
     // Create a canvas for the interaction count histogram
     TCanvas* c2 = new TCanvas("c2", "Energy Deposition Steps", 800, 600);

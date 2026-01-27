@@ -15,6 +15,7 @@
     0.001
   ],
   "em_model": "Penelope",
+  "livermore_atomic_deexcitation": true,
   "primary_particle": "e-",
   "pai_enabled": false,
   "events": 10000,

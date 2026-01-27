@@ -13,6 +13,7 @@
 #include "G4RegionStore.hh"
 #include "G4PAIModel.hh"
 #include "G4eIonisation.hh"
+#include "G4MuIonisation.hh"
 #include "G4ParticleDefinition.hh"
 #include "G4ProcessManager.hh"
 
@@ -22,7 +23,8 @@
 
 PhysicsList::PhysicsList(const G4String& emModel)
     : fEmModel(emModel),
-      fPaiEnabledOverride(-1)
+      fPaiEnabledOverride(-1),
+      fLivermoreAtomicDeexcitationOverride(-1)
 {
     ConfigureEmPhysics();
     RegisterPhysics(new G4DecayPhysics());               // Decay physics
@@ -64,6 +66,11 @@ void PhysicsList::SetPaiEnabledOverride(G4bool enabled)
     fPaiEnabledOverride = enabled ? 1 : 0;
 }
 
+void PhysicsList::SetLivermoreAtomicDeexcitationOverride(G4bool enabled)
+{
+    fLivermoreAtomicDeexcitationOverride = enabled ? 1 : 0;
+}
+
 void PhysicsList::ConstructProcess()
 {
     // Enforce low-energy tracking thresholds before building EM tables.
@@ -71,6 +78,19 @@ void PhysicsList::ConstructProcess()
     emParams->SetMinEnergy(0.1 * eV);
     emParams->SetLowestElectronEnergy(0.1 * eV);
     emParams->SetLowestMuHadEnergy(0.1 * eV);
+    if (fLivermoreAtomicDeexcitationOverride >= 0) {
+        G4String model = fEmModel;
+        model.toLower();
+        if (model == "g4emlivermorephysics" || model == "livermore" || model == "livermorephysics") {
+            const G4bool enabled = (fLivermoreAtomicDeexcitationOverride > 0);
+            emParams->SetFluo(enabled);
+            emParams->SetAuger(enabled);
+            // Note: PIXE control may not be available in all GEANT4 versions
+            // Fluo and Auger are the main atomic deexcitation processes
+            G4cout << "[Livermore] Atomic deexcitation (Fluo/Auger) "
+                   << (enabled ? "enabled" : "disabled") << " via config override" << G4endl;
+        }
+    }
 
     // Let the modular physics list construct all standard processes first
     G4VModularPhysicsList::ConstructProcess();
@@ -127,6 +147,26 @@ void PhysicsList::ConstructProcess()
                     G4cout << "[PAI] Enabled via config override for e- in Al2O3Region" << G4endl;
                 } else {
                     G4cout << "[PAI] Enabled for e- in Al2O3Region" << G4endl;
+                }
+            }
+        } else if (name == "mu-") {
+            // Find existing muIonisation process added by EM physics
+            G4MuIonisation* muIoni = nullptr;
+            G4int nProc = pmanager->GetProcessListLength();
+            for (G4int i = 0; i < nProc; ++i) {
+                auto* proc = (*pmanager->GetProcessList())[i];
+                muIoni = dynamic_cast<G4MuIonisation*>(proc);
+                if (muIoni) break;
+            }
+
+            if (muIoni) {
+                auto* paiModel = new G4PAIModel(particle, "PAI_mu-_Al2O3");
+                // Highest priority (0) for this region
+                muIoni->AddEmModel(0, paiModel, paiModel, targetRegion);
+                if (fPaiEnabledOverride > 0) {
+                    G4cout << "[PAI] Enabled via config override for mu- in Al2O3Region" << G4endl;
+                } else {
+                    G4cout << "[PAI] Enabled for mu- in Al2O3Region" << G4endl;
                 }
             }
         }

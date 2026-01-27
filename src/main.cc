@@ -200,6 +200,8 @@ int main(int argc, char** argv)
     std::string jsonContent;
     bool paiOverride = false;
     bool paiEnabled = true;
+    bool livermoreDeexcitationOverride = false;
+    bool livermoreDeexcitationEnabled = true;
     std::string emModel = "PAI";
     std::string emModelLower = "pai";
     if (isJsonScan) {
@@ -212,6 +214,9 @@ int main(int argc, char** argv)
         if (ParseBool(jsonContent, "pai_enabled", paiEnabled)) {
             paiOverride = true;
         }
+        if (ParseBool(jsonContent, "livermore_atomic_deexcitation", livermoreDeexcitationEnabled)) {
+            livermoreDeexcitationOverride = true;
+        }
     }
 
     // Construct the default run manager
@@ -223,6 +228,9 @@ int main(int argc, char** argv)
     auto* physicsList = new PhysicsList(emModel.c_str());
     if (paiOverride) {
         physicsList->SetPaiEnabledOverride(paiEnabled);
+    }
+    if (livermoreDeexcitationOverride) {
+        physicsList->SetLivermoreAtomicDeexcitationOverride(livermoreDeexcitationEnabled);
     }
     runManager->SetUserInitialization(physicsList);
     auto* actions = new ActionInitialization();
@@ -277,9 +285,17 @@ int main(int argc, char** argv)
         runAction->SetPrimaryParticleName(primaryParticle);
         runAction->SetEmModel(emModel);
         const bool emModelIsPai = (emModelLower == "pai");
+        const bool emModelIsLivermore =
+            (emModelLower == "g4emlivermorephysics" || emModelLower == "livermore" ||
+             emModelLower == "livermorephysics");
         const bool effectivePaiEnabled =
             emModelIsPai ? (paiOverride ? paiEnabled : true) : false;
         runAction->SetPaiEnabled(effectivePaiEnabled);
+        const int livermoreDeexcitationMeta =
+            emModelIsLivermore
+                ? (livermoreDeexcitationOverride ? (livermoreDeexcitationEnabled ? 1 : 0) : -1)
+                : -1;
+        runAction->SetLivermoreAtomicDeexcitation(livermoreDeexcitationMeta);
         if (!energiesMeV.empty()) {
             const auto maxEnergy = *std::max_element(energiesMeV.begin(), energiesMeV.end());
             runAction->SetMaxPrimaryEnergy(maxEnergy * MeV);

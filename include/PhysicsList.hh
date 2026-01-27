@@ -11,6 +11,7 @@ public:
     virtual ~PhysicsList();
 
     void SetPaiEnabledOverride(G4bool enabled);
+    void SetLivermoreAtomicDeexcitationOverride(G4bool enabled);
 
     // Configure physics processes
     virtual void ConstructProcess() override;
@@ -22,6 +23,7 @@ private:
     void ConfigureEmPhysics();
     G4String fEmModel;
     G4int fPaiEnabledOverride;
+    G4int fLivermoreAtomicDeexcitationOverride;
 };
 
 #endif

@@ -66,14 +66,20 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
 
     const G4Track* track    = step->GetTrack();
     const auto*    particle = track->GetParticleDefinition();
+    const G4String particleName = particle->GetParticleName();
+    const G4bool isPrimary = (track->GetTrackID() == 1 && track->GetParentID() == 0);
 
-    // We are interested only in electrons for the metrics below
-    if (particle->GetParticleName() != "e-") {
-        return;
+    // Accumulate primary particle energy deposition in Al2O3 (for all primary particles)
+    // (trackID==1, parentID==0, pre-step in Al2O3)
+    if (fEventAction && isPrimary && preName == "Al2O3") {
+        const G4double edep = step->GetTotalEnergyDeposit();
+        if (edep > 0.) {
+            fEventAction->AddPrimaryEdep(edep);
+        }
     }
 
-    // Track primary e- residual energy at the end of the event
-    if (fEventAction && track->GetTrackID() == 1 && track->GetParentID() == 0) {
+    // Track primary particle residual energy and other metrics (for all primary particles)
+    if (fEventAction && isPrimary) {
         fEventAction->UpdatePrimaryResidualEnergy(postPoint->GetKineticEnergy());
         const auto* postVol = postPoint->GetPhysicalVolume();
         if (postVol) {
@@ -98,27 +104,19 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         }
     }
 
-    // 1) Accumulate primary electron energy deposition in Al2O3
-    //    (trackID==1, parentID==0, pre-step in Al2O3)
-    if (fEventAction && track->GetTrackID() == 1 && track->GetParentID() == 0 &&
-        preName == "Al2O3") {
-        const G4double edep = step->GetTotalEnergyDeposit();
-        if (edep > 0.) {
-            fEventAction->AddPrimaryEdep(edep);
-        }
+    // Electron-specific tracking below
+    if (particleName != "e-") {
+        return;
     }
 
     // 1b) Capture per-step energy transfer in Al2O3 when PAI is enabled.
     //     Use energy deposition on electron steps as proxy for microscopic transfers.
     if (preName == "Al2O3" && fRunAction && fRunAction->IsPaiEnabled()) {
-        const G4String& pname = particle->GetParticleName();
-        if (pname == "e-") {
-            const G4double edep = step->GetTotalEnergyDeposit();
-            if (edep > 0.) {
-                auto* analysisManager = G4AnalysisManager::Instance();
-                if (analysisManager) {
-                    analysisManager->FillH1(3, edep / eV);
-                }
+        const G4double edep = step->GetTotalEnergyDeposit();
+        if (edep > 0.) {
+            auto* analysisManager = G4AnalysisManager::Instance();
+            if (analysisManager) {
+                analysisManager->FillH1(3, edep / eV);
             }
         }
     }

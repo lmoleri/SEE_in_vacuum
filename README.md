@@ -68,6 +68,7 @@ Example `scan.json`:
   "em_model": "PAI",
   "primary_particle": "e-",
   "pai_enabled": true,
+  "livermore_atomic_deexcitation": true,
   "events": 100000,
   "output_dir": "results/scan_thick10-20-50nm_particlee-_energy0p5-1-2MeV_events100000"
 }
@@ -80,7 +81,17 @@ Example `scan.json`:
 - `"G4EmLivermorePhysics"` (or `"livermore"`)
 - `"G4EmPenelopePhysics"` (or `"penelope"`)
 
+**Important: Model applicability by particle type:**
+- **PAI model**: Applied to both **electrons** and **muons** in the Al2O3 region. The PAI (Photoabsorption Ionization) model is manually attached to electron and muon ionization processes.
+- **Livermore model**: Only applies to **electrons and photons**. For muons, Livermore physics constructors fall back to standard GEANT4 muon models (Bethe-Bloch based). This means Livermore and standard physics will produce identical results for muons.
+- **Penelope model**: Only applies to **electrons and photons**. For muons, Penelope physics constructors fall back to standard GEANT4 muon models (Bethe-Bloch based). This means Penelope and standard physics will produce identical results for muons.
+
+**Note**: When comparing muon simulations, only the PAI model will show differences from standard physics. Livermore and Penelope muon results will be identical to each other and to standard GEANT4 muon physics, as they all use the same underlying Bethe-Bloch models for muon ionization.
+
 `pai_enabled` is only used when `em_model` is `"PAI"`.
+
+`livermore_atomic_deexcitation` is only used when `em_model` is `"G4EmLivermorePhysics"`
+(or `"livermore"`), and toggles atomic deexcitation (Fluo/Auger/PIXE).
 
 Output files are created inside `output_dir` for each combination. When `output_dir`
 is relative, it is resolved from the project root (not `build/`), e.g.:
@@ -100,7 +111,8 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
   - `ResidualEnergyVsLastProcess`: 2D residual energy vs last process category
   - `ResidualEnergyVsStopStatus`: 2D residual energy vs stop status category
   - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`,
-    `maxPrimaryEnergyMeV`, `paiEnabled`, `primaryParticle`, and `emModel`
+  `maxPrimaryEnergyMeV`, `paiEnabled`, `primaryParticle`, `emModel`,
+  and `livermoreAtomicDeexcitation`
   - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`, and other canvases saved with annotations
 
 ## Plotting

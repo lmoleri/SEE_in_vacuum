@@ -21,7 +21,8 @@ RunAction::RunAction()
       fEmModel("PAI"),
       fSampleThickness(0.),
       fOutputTag("SEE_in_vacuum"),
-      fPaiEnabled(false)
+      fPaiEnabled(false),
+      fLivermoreAtomicDeexcitation(-1)
 {
 }
 
@@ -60,6 +61,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleIColumn("paiEnabled");
         analysisManager->CreateNtupleSColumn("primaryParticle");
         analysisManager->CreateNtupleSColumn("emModel");
+        analysisManager->CreateNtupleIColumn("livermoreAtomicDeexcitation");
         analysisManager->FinishNtuple();
         metaCreated = true;
     }
@@ -67,9 +69,9 @@ void RunAction::BeginOfRunAction(const G4Run*)
     if (histosCreated) {
         analysisManager->Reset();
     } else {
-        // Create a 1D histogram for primary e- energy deposition in Al2O3
+        // Create a 1D histogram for primary particle energy deposition in Al2O3
         // ID 0: EdepPrimary
-        // Based on typical energy deposition: mean ~6 eV, RMS ~29 eV
+        // Based on typical energy deposition: mean ~6 eV, RMS ~29 eV (for electrons)
         // Use range 0-200 eV with fine binning for better resolution
         // Note: Values will be filled in eV units (converted in EventAction)
         G4double maxEnergy = fMaxPrimaryEnergy;
@@ -86,7 +88,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         G4int histoId = analysisManager->CreateH1(
             "EdepPrimary",
-            "Primary e^{-} energy deposition in Al_{2}O_{3}",
+            "Primary particle energy deposition in Al_{2}O_{3}",
             primaryBins,   // ~1 eV per bin across scan max energy
             0.,    // Edep min (eV)
             maxEnergy / eV   // Edep max (eV)
@@ -302,6 +304,7 @@ void RunAction::EndOfRunAction(const G4Run* run)
         analysisManager->FillNtupleIColumn(3, fPaiEnabled ? 1 : 0);
         analysisManager->FillNtupleSColumn(4, fPrimaryParticleName);
         analysisManager->FillNtupleSColumn(5, fEmModel);
+        analysisManager->FillNtupleIColumn(6, fLivermoreAtomicDeexcitation);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -362,6 +365,11 @@ void RunAction::SetOutputTag(const G4String& tag)
 void RunAction::SetPaiEnabled(G4bool enabled)
 {
     fPaiEnabled = enabled;
+}
+
+void RunAction::SetLivermoreAtomicDeexcitation(G4int value)
+{
+    fLivermoreAtomicDeexcitation = value;
 }
 
 G4bool RunAction::IsPaiEnabled() const

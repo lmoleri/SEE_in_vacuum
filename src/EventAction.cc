@@ -40,7 +40,7 @@ void EventAction::EndOfEventAction(const G4Event* event)
     auto* analysisManager = G4AnalysisManager::Instance();
     if (!analysisManager) return;
 
-    // Histogram ID 0: primary e- energy deposition in Al2O3
+    // Histogram ID 0: primary particle energy deposition in Al2O3
     // Convert from internal units (keV) to eV for display
     analysisManager->FillH1(0, fEdepPrimary / eV);
 

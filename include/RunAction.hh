@@ -30,6 +30,7 @@ public:
     void SetSampleThickness(G4double thickness);
     void SetOutputTag(const G4String& tag);
     void SetPaiEnabled(G4bool enabled);
+    void SetLivermoreAtomicDeexcitation(G4int value);
     G4bool IsPaiEnabled() const;
 
 private:
@@ -43,6 +44,7 @@ private:
     G4double fSampleThickness;
     G4String fOutputTag;
     G4bool fPaiEnabled;
+    G4int fLivermoreAtomicDeexcitation;
 };
 
 #endif
