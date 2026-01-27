@@ -231,23 +231,66 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
             newHist->GetXaxis()->SetTitle(hist->GetXaxis()->GetTitle());
             newHist->GetYaxis()->SetTitle(hist->GetYaxis()->GetTitle());
             
-            // Fill new histogram from original
-            // Use the histogram's mean value to fill, preserving the total entries
+            // Fill new histogram from original histogram's actual data
+            // Properly map bins from original to new histogram to preserve distribution
             const double histMean = hist->GetMean();
+            const double histRMS = hist->GetRMS();
             const double totalEntries = hist->GetEntries();
-            if (totalEntries > 0 && histMean > 0) {
-                // Fill at the mean value with the total number of entries
-                // This preserves the distribution when all data is in one bin
+            
+            // For very narrow distributions (RMS < mean*0.01), fill at mean location
+            // For wider distributions, properly map all bins
+            if (totalEntries > 0 && histMean > 0 && histRMS < histMean * 0.01) {
+                // Very narrow distribution - fill at mean location
                 newHist->Fill(histMean, totalEntries);
             } else {
-                // Fallback: fill from bin centers if mean is not available
+                // Wider distribution - map bins properly
                 for (int i = 1; i <= hist->GetNbinsX(); i++) {
                     const double content = hist->GetBinContent(i);
                     if (content > 0) {
+                        const double binLow = hist->GetXaxis()->GetBinLowEdge(i);
+                        const double binUp = hist->GetXaxis()->GetBinUpEdge(i);
                         const double binCenter = hist->GetXaxis()->GetBinCenter(i);
-                        newHist->Fill(binCenter, content);
+                        
+                        // Only process if bin overlaps with new histogram range
+                        if (binUp >= newMin && binLow <= newMax) {
+                            // Find which bins in the new histogram this bin overlaps with
+                            int newBinLow = newHist->GetXaxis()->FindBin(binLow);
+                            int newBinUp = newHist->GetXaxis()->FindBin(binUp);
+                            
+                            // Ensure bins are within valid range
+                            if (newBinLow < 1) newBinLow = 1;
+                            if (newBinUp > newHist->GetNbinsX()) newBinUp = newHist->GetNbinsX();
+                            
+                            if (newBinLow == newBinUp) {
+                                // Single bin - fill directly
+                                newHist->SetBinContent(newBinLow, newHist->GetBinContent(newBinLow) + content);
+                            } else {
+                                // Multiple bins - distribute content proportionally
+                                for (int j = newBinLow; j <= newBinUp; j++) {
+                                    double newBinLowEdge = newHist->GetXaxis()->GetBinLowEdge(j);
+                                    double newBinUpEdge = newHist->GetXaxis()->GetBinUpEdge(j);
+                                    
+                                    // Calculate overlap
+                                    double overlapLow = std::max(binLow, newBinLowEdge);
+                                    double overlapUp = std::min(binUp, newBinUpEdge);
+                                    double overlap = std::max(0.0, overlapUp - overlapLow);
+                                    double originalBinWidth = binUp - binLow;
+                                    
+                                    if (overlap > 0 && originalBinWidth > 0) {
+                                        double fraction = overlap / originalBinWidth;
+                                        newHist->SetBinContent(j, newHist->GetBinContent(j) + content * fraction);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
+                // Update entries to match sum of bin contents
+                double totalContent = 0;
+                for (int i = 1; i <= newHist->GetNbinsX(); i++) {
+                    totalContent += newHist->GetBinContent(i);
+                }
+                newHist->SetEntries(totalContent);
             }
             
             return newHist;
@@ -350,6 +393,15 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
                      particleText.c_str(), modelText.c_str()));
     hToDraw->Draw("HIST");
 
+    // Trim x-axis after last non-empty bin
+    const int lastNonEmptyBin = hToDraw->FindLastBinAbove(0.0);
+    if (lastNonEmptyBin > 0) {
+        const double lastBinEdge = hToDraw->GetXaxis()->GetBinUpEdge(lastNonEmptyBin);
+        // Add 5% padding after the last non-empty bin
+        const double trimmedMax = lastBinEdge * 1.05;
+        hToDraw->GetXaxis()->SetRangeUser(0.0, trimmedMax);
+    }
+
     // Add info text
     TLatex info1;
     info1.SetNDC(true);
@@ -374,6 +426,103 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
     f->cd();
     c1->Write("EdepPrimaryCanvas", TObject::kOverwrite);
     saveCanvas(c1, "EdepPrimaryCanvas");
+    
+    // Create zoomed version of EdepPrimaryCanvas (0-100eV range)
+    TCanvas* c1zoom = new TCanvas("c1zoom", "Energy Deposition (Zoom 0-100eV)", 800, 600);
+    c1zoom->SetGrid();
+    c1zoom->SetLogy();
+    c1zoom->SetLeftMargin(0.15);
+    
+    // Create a new histogram with fine binning for the zoom range (0-100eV)
+    // Use 0.5 eV bins for good resolution (200 bins total)
+    const int zoomBins = 200;
+    TH1* hZoom = new TH1D("EdepPrimaryZoom", 
+                          Form("Primary %s energy deposition in Al_{2}O_{3} - Zoom 0-100eV (%s)",
+                               particleText.c_str(), modelText.c_str()),
+                          zoomBins, 0.0, 100.0);
+    hZoom->SetDirectory(nullptr);
+    
+    // Fill the zoom histogram from the original histogram (before optimization)
+    // This ensures we have all the data with proper binning
+    TH1* hSource = hOptimizedCreated ? h : hToDraw;
+    for (int i = 1; i <= hSource->GetNbinsX(); i++) {
+        const double content = hSource->GetBinContent(i);
+        if (content > 0) {
+            const double binLow = hSource->GetXaxis()->GetBinLowEdge(i);
+            const double binUp = hSource->GetXaxis()->GetBinUpEdge(i);
+            const double binCenter = hSource->GetXaxis()->GetBinCenter(i);
+            
+            // Only process if bin overlaps with zoom range (0-100eV)
+            if (binUp >= 0.0 && binLow <= 100.0) {
+                // Find which bins in the zoom histogram this bin overlaps with
+                int zoomBinLow = hZoom->GetXaxis()->FindBin(binLow);
+                int zoomBinUp = hZoom->GetXaxis()->FindBin(binUp);
+                
+                // Ensure bins are within valid range
+                if (zoomBinLow < 1) zoomBinLow = 1;
+                if (zoomBinUp > hZoom->GetNbinsX()) zoomBinUp = hZoom->GetNbinsX();
+                
+                if (zoomBinLow == zoomBinUp) {
+                    // Single bin - fill directly
+                    hZoom->SetBinContent(zoomBinLow, hZoom->GetBinContent(zoomBinLow) + content);
+                } else {
+                    // Multiple bins - distribute content proportionally
+                    for (int j = zoomBinLow; j <= zoomBinUp; j++) {
+                        double zoomBinLowEdge = hZoom->GetXaxis()->GetBinLowEdge(j);
+                        double zoomBinUpEdge = hZoom->GetXaxis()->GetBinUpEdge(j);
+                        
+                        // Calculate overlap
+                        double overlapLow = std::max(binLow, zoomBinLowEdge);
+                        double overlapUp = std::min(binUp, zoomBinUpEdge);
+                        double overlap = std::max(0.0, overlapUp - overlapLow);
+                        double originalBinWidth = binUp - binLow;
+                        
+                        if (overlap > 0 && originalBinWidth > 0) {
+                            double fraction = overlap / originalBinWidth;
+                            hZoom->SetBinContent(j, hZoom->GetBinContent(j) + content * fraction);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Update entries to match sum of bin contents
+    double totalContent = 0;
+    for (int i = 1; i <= hZoom->GetNbinsX(); i++) {
+        totalContent += hZoom->GetBinContent(i);
+    }
+    hZoom->SetEntries(totalContent);
+    
+    hZoom->GetYaxis()->SetTitleOffset(1.35);
+    hZoom->GetYaxis()->SetLabelSize(0.035);
+    hZoom->SetLineColor(kMagenta + 1);
+    hZoom->SetLineWidth(3);
+    hZoom->Draw("HIST");
+    
+    // Add info text
+    TLatex info1zoom;
+    info1zoom.SetNDC(true);
+    info1zoom.SetTextSize(0.03);
+    if (primaryEnergyMeV > 0.) {
+        info1zoom.DrawLatex(0.45, 0.85,
+                        Form("Primary %s energy: %s", particleText.c_str(),
+                             energyLabel(primaryEnergyMeV).c_str()));
+    } else {
+        info1zoom.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+    }
+    if (sampleThicknessNm > 0.) {
+        info1zoom.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+    } else {
+        info1zoom.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+    }
+    info1zoom.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
+    
+    c1zoom->Update();
+    c1zoom->Draw();
+    f->cd();
+    c1zoom->Write("EdepPrimaryCanvasZoom", TObject::kOverwrite);
+    saveCanvas(c1zoom, "EdepPrimaryCanvasZoom");
+    delete hZoom;
     
     // Clean up rebinned histogram if created
     if (hOptimizedCreated && hOptimized) {
@@ -460,6 +609,100 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         f->cd();
         c3->Write("EdepStepCanvas", TObject::kOverwrite);
         saveCanvas(c3, "EdepStepCanvas");
+        
+        // Create zoomed version of EdepStepCanvas (0-100eV range)
+        TCanvas* c3zoom = new TCanvas("c3zoom", "Energy Deposition per Step (Zoom 0-100eV)", 800, 600);
+        c3zoom->SetGrid();
+        c3zoom->SetLogy();
+        c3zoom->SetLeftMargin(0.15);
+        
+        // Create a new histogram with fine binning for the zoom range (0-100eV)
+        // Use 0.5 eV bins for good resolution (200 bins total)
+        const int zoomBins = 200;
+        TH1* hStepZoom = new TH1D("EdepStepZoom",
+                                  Form("Energy deposition per step - Zoom 0-100eV (%s, %s)",
+                                       particleText.c_str(), modelText.c_str()),
+                                  zoomBins, 0.0, 100.0);
+        hStepZoom->SetDirectory(nullptr);
+        
+        // Fill the zoom histogram from the original EdepStep histogram
+        for (int i = 1; i <= hStep->GetNbinsX(); i++) {
+            const double content = hStep->GetBinContent(i);
+            if (content > 0) {
+                const double binLow = hStep->GetXaxis()->GetBinLowEdge(i);
+                const double binUp = hStep->GetXaxis()->GetBinUpEdge(i);
+                const double binCenter = hStep->GetXaxis()->GetBinCenter(i);
+                
+                // Only process if bin overlaps with zoom range (0-100eV)
+                if (binUp >= 0.0 && binLow <= 100.0) {
+                    // Find which bins in the zoom histogram this bin overlaps with
+                    int zoomBinLow = hStepZoom->GetXaxis()->FindBin(binLow);
+                    int zoomBinUp = hStepZoom->GetXaxis()->FindBin(binUp);
+                    
+                    // Ensure bins are within valid range
+                    if (zoomBinLow < 1) zoomBinLow = 1;
+                    if (zoomBinUp > hStepZoom->GetNbinsX()) zoomBinUp = hStepZoom->GetNbinsX();
+                    
+                    if (zoomBinLow == zoomBinUp) {
+                        // Single bin - fill directly
+                        hStepZoom->SetBinContent(zoomBinLow, hStepZoom->GetBinContent(zoomBinLow) + content);
+                    } else {
+                        // Multiple bins - distribute content proportionally
+                        for (int j = zoomBinLow; j <= zoomBinUp; j++) {
+                            double zoomBinLowEdge = hStepZoom->GetXaxis()->GetBinLowEdge(j);
+                            double zoomBinUpEdge = hStepZoom->GetXaxis()->GetBinUpEdge(j);
+                            
+                            // Calculate overlap
+                            double overlapLow = std::max(binLow, zoomBinLowEdge);
+                            double overlapUp = std::min(binUp, zoomBinUpEdge);
+                            double overlap = std::max(0.0, overlapUp - overlapLow);
+                            double originalBinWidth = binUp - binLow;
+                            
+                            if (overlap > 0 && originalBinWidth > 0) {
+                                double fraction = overlap / originalBinWidth;
+                                hStepZoom->SetBinContent(j, hStepZoom->GetBinContent(j) + content * fraction);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Update entries to match sum of bin contents
+        double totalContent = 0;
+        for (int i = 1; i <= hStepZoom->GetNbinsX(); i++) {
+            totalContent += hStepZoom->GetBinContent(i);
+        }
+        hStepZoom->SetEntries(totalContent);
+        
+        hStepZoom->GetYaxis()->SetTitleOffset(1.35);
+        hStepZoom->GetYaxis()->SetLabelSize(0.035);
+        hStepZoom->SetLineColor(kMagenta + 1);
+        hStepZoom->SetLineWidth(3);
+        hStepZoom->Draw("HIST");
+        
+        TLatex info3zoom;
+        info3zoom.SetNDC(true);
+        info3zoom.SetTextSize(0.03);
+        if (primaryEnergyMeV > 0.) {
+            info3zoom.DrawLatex(0.45, 0.85,
+                            Form("Primary %s energy: %s", particleText.c_str(),
+                                 energyLabel(primaryEnergyMeV).c_str()));
+        } else {
+            info3zoom.DrawLatex(0.45, 0.85, Form("Primary %s energy: n/a", particleText.c_str()));
+        }
+        if (sampleThicknessNm > 0.) {
+            info3zoom.DrawLatex(0.45, 0.79, Form("Sample thickness: %.2f nm", sampleThicknessNm));
+        } else {
+            info3zoom.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
+        }
+        info3zoom.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
+        
+        c3zoom->Update();
+        c3zoom->Draw();
+        f->cd();
+        c3zoom->Write("EdepStepCanvasZoom", TObject::kOverwrite);
+        saveCanvas(c3zoom, "EdepStepCanvasZoom");
+        delete hStepZoom;
     }
 
     if (hPai && modelText == "PAI") {
