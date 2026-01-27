@@ -10,6 +10,11 @@
 
 #include <cmath>
 
+// ROOT headers for histogram optimization
+#include "TFile.h"
+#include "TH1.h"
+#include "TString.h"
+
 RunAction::RunAction()
     : G4UserRunAction(),
       fNPrimaryElectrons(0),
@@ -69,11 +74,56 @@ void RunAction::BeginOfRunAction(const G4Run*)
     if (histosCreated) {
         analysisManager->Reset();
     } else {
-        // Create a 1D histogram for primary particle energy deposition in Al2O3
-        // ID 0: EdepPrimary
-        // Based on typical energy deposition: mean ~6 eV, RMS ~29 eV (for electrons)
-        // Use range 0-200 eV with fine binning for better resolution
-        // Note: Values will be filled in eV units (converted in EventAction)
+        // Create a 1D histogram for total energy deposition in Al2O3
+        // ID 0: EdepPrimary (includes primary particle + all its descendants/secondaries)
+        // Use a reasonable range for energy deposition, not the full primary energy
+        // Energy deposition is typically much smaller than primary energy
+        // For electrons: typically 0-1000 eV, for muons: typically 0-10000 eV
+        // Use adaptive range based on primary particle type and energy
+        G4double maxEdepRange = 10000. * eV; // Default: 10 keV max (covers most cases)
+        
+        // For high-energy particles, use a larger but still reasonable range
+        G4double primaryEnergy = fPrimaryEnergy;
+        if (primaryEnergy <= 0.) {
+            primaryEnergy = fMaxPrimaryEnergy;
+        }
+        
+        // Estimate reasonable max energy deposition based on particle type and energy
+        // For electrons: energy deposition scales roughly with sqrt(energy) up to ~1 MeV, then more slowly
+        // For muons: energy deposition is typically much smaller
+        if (fPrimaryParticleName == "e-" || fPrimaryParticleName == "e+") {
+            // Electrons: use min(primaryEnergy/100, 10000 eV) to avoid huge ranges
+            maxEdepRange = std::min(primaryEnergy / 100.0, 10000. * eV);
+            // But ensure at least 1000 eV range for reasonable statistics
+            if (maxEdepRange < 1000. * eV) {
+                maxEdepRange = 1000. * eV;
+            }
+        } else if (fPrimaryParticleName == "mu-" || fPrimaryParticleName == "mu+") {
+            // Muons: energy deposition is typically very small, use 10000 eV max
+            maxEdepRange = 10000. * eV;
+        }
+        
+        // Use fine binning: 1 eV bins for good resolution
+        // This ensures we can properly resolve the actual data distribution
+        const G4double binWidth = 1.0 * eV;
+        const G4int primaryBins = static_cast<G4int>(std::ceil(maxEdepRange / binWidth));
+        // Cap at reasonable maximum to avoid memory issues, but ensure fine binning
+        const G4int maxPrimaryBins = 100000;
+        const G4int finalBins = std::min(primaryBins, maxPrimaryBins);
+
+        G4int histoId = analysisManager->CreateH1(
+            "EdepPrimary",
+            "Total energy deposition in Al_{2}O_{3} (primary + descendants)",
+            finalBins,   // 1 eV per bin for fine resolution
+            0.,    // Edep min (eV)
+            maxEdepRange / eV   // Edep max (eV) - reasonable range, not full primary energy
+        );
+
+        // Set axis labels explicitly (X-axis in eV units)
+        analysisManager->SetH1XAxisTitle(histoId, "Energy deposition (eV)");
+        analysisManager->SetH1YAxisTitle(histoId, "Number of events");
+
+        // Get maxEnergy for other histograms (use primary energy for residual energy, etc.)
         G4double maxEnergy = fMaxPrimaryEnergy;
         if (maxEnergy <= 0.) {
             maxEnergy = fPrimaryEnergy;
@@ -81,22 +131,6 @@ void RunAction::BeginOfRunAction(const G4Run*)
         if (maxEnergy <= 0.) {
             maxEnergy = 200. * eV;
         }
-        const G4int maxPrimaryBins = 200000;
-        const G4double idealBins = std::ceil(maxEnergy / eV);
-        const G4int primaryBins = std::max(
-            1, static_cast<G4int>(std::min(idealBins, static_cast<G4double>(maxPrimaryBins))));
-
-        G4int histoId = analysisManager->CreateH1(
-            "EdepPrimary",
-            "Primary particle energy deposition in Al_{2}O_{3}",
-            primaryBins,   // ~1 eV per bin across scan max energy
-            0.,    // Edep min (eV)
-            maxEnergy / eV   // Edep max (eV)
-        );
-
-        // Set axis labels explicitly (X-axis in eV units)
-        analysisManager->SetH1XAxisTitle(histoId, "Energy deposition (eV)");
-        analysisManager->SetH1YAxisTitle(histoId, "Number of events");
 
         // Create a 1D histogram for energy deposited per step in Al2O3
         // ID 2: EdepStep
@@ -150,10 +184,15 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         // Create a 1D histogram for primary residual kinetic energy at end of event
         // ID 4: PrimaryResidualEnergy
+        // Use primary energy range for residual energy (can be up to full primary energy)
+        const G4int maxResidualBins = 200000;
+        const G4double idealResidualBins = std::ceil(maxEnergy / eV);
+        const G4int residualBins = std::max(
+            1, static_cast<G4int>(std::min(idealResidualBins, static_cast<G4double>(maxResidualBins))));
         G4int residualId = analysisManager->CreateH1(
             "PrimaryResidualEnergy",
             "Primary residual kinetic energy at end of event",
-            primaryBins, // 1 eV per bin across scan max energy
+            residualBins, // 1 eV per bin across scan max energy
             0.,
             maxEnergy / eV
         );
@@ -195,12 +234,13 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
         // Create a 2D histogram: event edep vs number of steps in Al2O3
         // ID 0 for H2: EdepPrimaryVsSteps
+        // Use the same binning as EdepPrimary (maxEdepRange, not maxEnergy)
         G4int edepVsStepsId = analysisManager->CreateH2(
             "EdepPrimaryVsSteps",
             "Primary energy deposition vs steps in Al_{2}O_{3}",
-            primaryBins,
+            finalBins,  // Use same bins as EdepPrimary
             0.,
-            maxEnergy / eV,
+            maxEdepRange / eV,  // Use same range as EdepPrimary
             stepsMax,
             0.,
             stepsMax
@@ -310,7 +350,20 @@ void RunAction::EndOfRunAction(const G4Run* run)
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
+        
+        // Get the file name to optimize histograms
+        G4String fileName = fOutputTag;
+        if (fileName.empty()) {
+            fileName = "SEE_in_vacuum";
+        }
+        if (fileName.size() < 5 || fileName.substr(fileName.size() - 5) != ".root") {
+            fileName += ".root";
+        }
+        
         analysisManager->CloseFile();
+        
+        // Optimize EdepPrimary histogram in the ROOT file
+        OptimizeHistogramInFile(fileName);
     }
 }
 
@@ -377,5 +430,88 @@ void RunAction::SetLivermoreAtomicDeexcitation(G4int value)
 G4bool RunAction::IsPaiEnabled() const
 {
     return fPaiEnabled;
+}
+
+void RunAction::OptimizeHistogramInFile(const G4String& fileName)
+{
+    // Open the ROOT file in update mode
+    TFile* file = TFile::Open(fileName.c_str(), "UPDATE");
+    if (!file || file->IsZombie()) {
+        G4cerr << "Warning: Could not open file for histogram optimization: " << fileName << G4endl;
+        return;
+    }
+    
+    // Get the EdepPrimary histogram
+    TH1* hOriginal = dynamic_cast<TH1*>(file->Get("EdepPrimary"));
+    if (!hOriginal) {
+        file->Close();
+        return;
+    }
+    
+    // Find the last non-empty bin to trim the range
+    int lastNonEmptyBin = hOriginal->FindLastBinAbove(0.0);
+    if (lastNonEmptyBin <= 0) {
+        file->Close();
+        return;
+    }
+    
+    // Get the upper edge of the last non-empty bin
+    double lastBinEdge = hOriginal->GetXaxis()->GetBinUpEdge(lastNonEmptyBin);
+    
+    // Add small padding (5% or at least 2 bin widths)
+    const double binWidth = hOriginal->GetBinWidth(1);
+    const double padding = std::max(lastBinEdge * 0.05, binWidth * 2.0);
+    const double newMax = lastBinEdge + padding;
+    const double currentMax = hOriginal->GetXaxis()->GetXmax();
+    
+    // Only optimize if we can trim significantly (at least 10% reduction)
+    if (newMax < currentMax * 0.9) {
+        // Create new histogram with trimmed range but same binning
+        const int currentBins = hOriginal->GetNbinsX();
+        const double currentMin = hOriginal->GetXaxis()->GetXmin();
+        // Calculate new number of bins to maintain same bin width
+        const int newBins = static_cast<int>(std::ceil((newMax - currentMin) / binWidth));
+        
+        TH1* hOptimized = new TH1D("EdepPrimary_optimized",
+                                   hOriginal->GetTitle(),
+                                   newBins, currentMin, newMax);
+        hOptimized->SetDirectory(nullptr);
+        
+        // Copy axis titles
+        hOptimized->GetXaxis()->SetTitle(hOriginal->GetXaxis()->GetTitle());
+        hOptimized->GetYaxis()->SetTitle(hOriginal->GetYaxis()->GetTitle());
+        
+        // Copy bin contents from original (only up to newMax)
+        for (int i = 1; i <= hOriginal->GetNbinsX(); i++) {
+            const double binCenter = hOriginal->GetXaxis()->GetBinCenter(i);
+            if (binCenter <= newMax) {
+                const double content = hOriginal->GetBinContent(i);
+                if (content > 0) {
+                    // Find corresponding bin in new histogram
+                    int newBin = hOptimized->GetXaxis()->FindBin(binCenter);
+                    if (newBin >= 1 && newBin <= hOptimized->GetNbinsX()) {
+                        hOptimized->SetBinContent(newBin, hOptimized->GetBinContent(newBin) + content);
+                    }
+                }
+            }
+        }
+        
+        // Update entries
+        double totalContent = 0;
+        for (int i = 1; i <= hOptimized->GetNbinsX(); i++) {
+            totalContent += hOptimized->GetBinContent(i);
+        }
+        hOptimized->SetEntries(totalContent);
+        
+        // Replace the original histogram
+        file->cd();
+        file->Delete("EdepPrimary;*");
+        hOptimized->SetName("EdepPrimary");
+        hOptimized->SetDirectory(file);
+        hOptimized->Write("EdepPrimary", TObject::kOverwrite);
+        file->Flush();
+    }
+    
+    file->Close();
 }
 

@@ -100,9 +100,9 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
 ## Outputs
 
 - `SEE_in_vacuum.root` (ROOT file with histograms and canvases)
-  - `EdepPrimary`: primary particle energy deposition in Al2O3 (eV)
+  - `EdepPrimary`: total energy deposition in Al2O3 (eV) from the primary particle and all its descendants (secondaries, delta rays, etc.). This represents the total energy that originated from the primary particle. The histogram is created with fine binning (1 eV per bin) and a reasonable range (0-10000 eV), then automatically optimized after the simulation to trim the range after the last non-empty bin, ensuring proper x-axis range and binning that matches the data distribution.
   - `EdepInteractions`: number of energy-depositing steps in Al2O3 per event
-  - `EdepStep`: energy deposition per step in Al2O3 (eV)
+  - `EdepStep`: energy deposition per step in Al2O3 (eV) from any particle (primary or secondary)
   - `PAITransfer`: per-step energy transfer proxy in Al2O3 (eV)
   - `PrimaryResidualEnergy`: primary residual kinetic energy at end of event (eV)
   - `PrimaryEndVolume`: end volume category (Al2O3/World/OutOfWorld/Other)
