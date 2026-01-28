@@ -227,6 +227,10 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
     std_SE = np.std(per_event_SE_array)
     median_SE = np.median(per_event_SE_array)
     
+    # Calculate fraction of events with at least one secondary electron
+    n_events_with_SE = np.sum(per_event_SE_array > 0)
+    fraction_with_SE = n_events_with_SE / n_events if n_events > 0 else 0.0
+    
     # Calculate expected mean (for validation)
     # Expected mean = average of mu over all events
     # We approximate this by: mean(ΔE) / ε * P_esc
@@ -242,7 +246,9 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
         'max_SE': int(np.max(per_event_SE_array)),
         'expected_mean': expected_mean,
         'mean_edep': mean_edep,
-        'n_events': n_events
+        'n_events': n_events,
+        'n_events_with_SE': n_events_with_SE,
+        'fraction_with_SE': fraction_with_SE
     }
     
     return total_SE, per_event_SE, statistics
@@ -298,20 +304,38 @@ def process_histogram_from_file(root_file_path, hist_name="EdepPrimary", seed=42
     
     # Create output histograms
     max_SE = max(per_event_SE) if per_event_SE else 0
-    n_bins = max(50, max_SE + 10)  # At least 50 bins, or enough to cover max
+    # Use reasonable binning: if max is small, use more bins for better resolution
+    if max_SE < 50:
+        n_bins = max(50, int(max_SE) + 1)
+    else:
+        n_bins = max(50, max_SE + 10)
     
     sey_hist = TH1D("SEY_MonteCarlo", "Secondary Electron Yield (Monte Carlo)", 
                     n_bins, -0.5, max_SE + 0.5)
     sey_hist.SetXTitle("Number of Secondary Electrons per Event")
     sey_hist.SetYTitle("Number of Events")
-    sey_hist.SetFillColor(ROOT.kBlue)
+    sey_hist.SetFillColor(9)  # kBlue = 9
     sey_hist.SetFillStyle(3004)
-    sey_hist.SetLineColor(ROOT.kBlue)
+    sey_hist.SetLineColor(9)  # kBlue = 9
     sey_hist.SetLineWidth(2)
+    sey_hist.SetMarkerStyle(20)
+    sey_hist.SetMarkerColor(9)  # kBlue = 9
     
     # Fill histogram
     for n_se in per_event_SE:
         sey_hist.Fill(n_se)
+    
+    # Ensure histogram has proper range
+    if sey_hist.GetEntries() > 0:
+        sey_hist.SetMinimum(0)  # Start Y-axis at 0
+    
+    # Create plot FIRST (before writing to file, to keep histogram valid)
+    try:
+        create_plot(sey_hist, statistics, root_file_path)
+    except Exception as e:
+        print("Warning: Could not create plot: {}".format(e))
+        import traceback
+        traceback.print_exc()
     
     # Create output file
     output_file_path = root_file_path.replace(".root", "_SEY_MonteCarlo.root")
@@ -347,6 +371,8 @@ Results:
   
   Mean energy deposition: {statistics['mean_edep']:.2f} eV
   Mean free electrons per event: {statistics['mean_edep']/EPSILON:.2f}
+  
+  Events with at least one SE: {statistics['n_events_with_SE']}/{statistics['n_events']} ({statistics['fraction_with_SE']*100:.2f}%)
 """
     
     print(summary_text)
@@ -356,11 +382,9 @@ Results:
     summary_hist.SetTitle(summary_text)
     summary_hist.Write()
     
+    # Close files
     output_file.Close()
     root_file.Close()
-    
-    # Create plot
-    create_plot(sey_hist, statistics, root_file_path)
     
     return total_SE, per_event_SE, statistics, output_file_path
 
@@ -378,48 +402,147 @@ def create_plot(sey_hist, statistics, input_file_path):
     input_file_path : str
         Input file path (for output naming)
     """
-    gStyle.SetOptStat(1110)  # Show mean, RMS, entries
+    gStyle.SetOptStat(1110)  # Show mean, RMS, entries (top-right)
     gStyle.SetOptFit(0)
     
     canvas = TCanvas("SEYCanvas", "Secondary Electron Yield (Monte Carlo)", 1000, 700)
     canvas.SetGrid()
+    canvas.cd()
     
-    sey_hist.Draw("hist")
+    # Set Y-axis to logarithmic scale
+    canvas.SetLogy(1)
     
-    # Add text with statistics
-    text = TLatex()
-    text.SetNDC()
-    text.SetTextSize(0.03)
-    text.SetTextAlign(12)
+    # Ensure histogram is properly styled (in case it wasn't set earlier)
+    # Wrap in try-except to avoid crashes if color setting fails
+    try:
+        sey_hist.SetFillColor(9)  # kBlue = 9
+        sey_hist.SetFillStyle(3004)
+        sey_hist.SetLineColor(9)  # kBlue = 9
+        sey_hist.SetMarkerColor(9)  # kBlue = 9
+    except:
+        pass  # Skip color setting if it fails
     
-    y_pos = 0.95
-    text.DrawLatex(0.15, y_pos, "Monte Carlo SEY Calculation")
-    y_pos -= 0.04
-    text.DrawLatex(0.15, y_pos, f"Mean SEY: {statistics['mean_SE']:.4f} #pm {statistics['std_SE']:.4f}")
-    y_pos -= 0.04
-    text.DrawLatex(0.15, y_pos, f"Expected (theoretical): {statistics['expected_mean']:.4f}")
-    y_pos -= 0.04
-    text.DrawLatex(0.15, y_pos, f"Total events: {statistics['n_events']}")
-    y_pos -= 0.04
-    text.DrawLatex(0.15, y_pos, f"Total SE: {statistics['total_SE']}")
-    y_pos -= 0.04
-    text.DrawLatex(0.15, y_pos, f"P_{{esc}} = {P_ESC:.4f} (z = {Z_DEPTH/10:.1f} nm)")
+    # These should always work
+    sey_hist.SetLineWidth(2)
+    sey_hist.SetMarkerStyle(20)
     
+    # For log scale, set minimum to a small positive value (not 0)
+    min_y = sey_hist.GetMinimum()
+    if min_y <= 0:
+        sey_hist.SetMinimum(0.1)  # Small positive value for log scale
+    
+    # Set reasonable Y-axis range for log scale
+    max_y = sey_hist.GetMaximum()
+    if max_y > 0:
+        sey_hist.SetMaximum(max_y * 10)  # Larger range for log scale
+    else:
+        sey_hist.SetMaximum(1000)  # Default if empty
+    
+    # Draw histogram - use "HIST" option for better visibility
+    sey_hist.Draw("HIST")
     canvas.Update()
     
-    # Save plot
-    plot_file_path = input_file_path.replace(".root", "_SEY_MonteCarlo.pdf")
-    canvas.SaveAs(plot_file_path)
-    print(f"\nPlot saved to: {plot_file_path}")
+    # Verify histogram is visible
+    if sey_hist.GetEntries() == 0:
+        print("Warning: Histogram has no entries!")
+    else:
+        print("Histogram has {} entries, max bin: {}".format(
+            sey_hist.GetEntries(), sey_hist.GetMaximum()))
     
-    # Also save as ROOT file
-    root_plot_path = input_file_path.replace(".root", "_SEY_MonteCarlo_plot.root")
+    # Determine output directory in plots folder
+    # Extract run identifier from input file path
+    import os
+    input_dir = os.path.dirname(input_file_path)
+    input_basename = os.path.basename(input_file_path)
+    
+    # Create plots subdirectory based on input directory structure
+    # e.g., results/scan_.../file.root -> plots/scan_.../
+    if "results" in input_dir:
+        plots_subdir = input_dir.replace("results", "plots")
+    else:
+        # Fallback: use input directory name
+        plots_subdir = os.path.join("plots", os.path.basename(input_dir))
+    
+    # Create plots directory if it doesn't exist
+    os.makedirs(plots_subdir, exist_ok=True)
+    
+    # Generate plot filename
+    plot_basename = input_basename.replace(".root", "_SEY_MonteCarlo")
+    plot_file_path = os.path.join(plots_subdir, plot_basename + ".pdf")
+    
+    # Save plot first (before adding text that might cause issues)
+    canvas.SaveAs(plot_file_path)
+    print("\nPlot saved to: {}".format(plot_file_path))
+    
+    # Try to add text, but don't fail if it doesn't work
+    try:
+        text = TLatex()
+        text.SetNDC(True)
+        text.SetTextSize(0.025)
+        text.SetTextAlign(12)
+        
+        # Position text on the LEFT side to avoid overlap with:
+        # - Title (top-center, y ~ 0.95)
+        # - Stat box (top-right, x ~ 0.6-0.95, y ~ 0.7-0.95)
+        x_pos = 0.15  # Left side
+        y_pos = 0.85  # Below title area, above stat box
+        
+        # Draw text one by one with explicit string conversion
+        text.DrawLatex(float(x_pos), float(y_pos), "Monte Carlo SEY Calculation")
+        y_pos -= 0.035
+        mean_str = "Mean SEY: %.4f" % statistics['mean_SE']
+        text.DrawLatex(float(x_pos), float(y_pos), mean_str)
+        y_pos -= 0.035
+        # Expected = theoretical mean SEY = (mean_ΔE / ε) * P_esc
+        exp_str = "Expected (theoretical): %.4f" % statistics['expected_mean']
+        text.DrawLatex(float(x_pos), float(y_pos), exp_str)
+        y_pos -= 0.035
+        events_str = "Events: %d" % statistics['n_events']
+        text.DrawLatex(float(x_pos), float(y_pos), events_str)
+        y_pos -= 0.035
+        total_str = "Total SE: %d" % statistics['total_SE']
+        text.DrawLatex(float(x_pos), float(y_pos), total_str)
+        y_pos -= 0.035
+        # Fraction of events with at least one SE
+        frac_str = "Events with SE: %.2f%% (%d/%d)" % (
+            statistics['fraction_with_SE'] * 100.0,
+            statistics['n_events_with_SE'],
+            statistics['n_events']
+        )
+        text.DrawLatex(float(x_pos), float(y_pos), frac_str)
+        y_pos -= 0.035
+        # P_esc = escape probability at production depth z
+        # P_esc = B * exp(-alpha * z)
+        pesc_str = "P_{esc}(z) = %.4f" % P_ESC
+        text.DrawLatex(float(x_pos), float(y_pos), pesc_str)
+        y_pos -= 0.035
+        depth_str = "Production depth: z = %.1f nm" % (Z_DEPTH/10)
+        text.DrawLatex(float(x_pos), float(y_pos), depth_str)
+        
+        canvas.Update()
+        # Save again with text
+        canvas.SaveAs(plot_file_path)
+    except Exception as e:
+        print("Note: Text annotations skipped (histogram saved successfully)")
+        # PDF is already saved, so we're good
+    
+    # Also save as ROOT file in plots folder
+    root_plot_path = os.path.join(plots_subdir, plot_basename + "_plot.root")
     canvas.SaveAs(root_plot_path)
-    print(f"Plot (ROOT) saved to: {root_plot_path}")
+    print("Plot (ROOT) saved to: {}".format(root_plot_path))
 
 
 def main():
     """Main function."""
+    # Declare globals at the start to avoid syntax errors
+    global EPSILON, B, ALPHA, Z_DEPTH, P_ESC
+    
+    # Store original values for help strings
+    epsilon_default = EPSILON
+    B_default = B
+    alpha_default = ALPHA
+    depth_default = Z_DEPTH
+    
     parser = argparse.ArgumentParser(
         description="Calculate Secondary Electron Yield from Muon Interactions using Monte Carlo method",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -442,33 +565,39 @@ Example:
                        help="Random number generator seed (default: 42)")
     parser.add_argument("--epsilon", "-e",
                        type=float,
-                       default=EPSILON,
-                       help=f"Energy per free electron in eV (default: {EPSILON})")
-    parser.add_argument("--B", "-b",
+                       default=None,
+                       help=f"Energy per free electron in eV (default: {epsilon_default})")
+    parser.add_argument("--B", 
                        type=float,
-                       default=B,
-                       help=f"Surface escape probability (default: {B})")
+                       default=None,
+                       help=f"Surface escape probability (default: {B_default})")
     parser.add_argument("--alpha", "-a",
                        type=float,
-                       default=ALPHA,
-                       help=f"Attenuation coefficient in Å^-1 (default: {ALPHA})")
+                       default=None,
+                       help=f"Attenuation coefficient in Å^-1 (default: {alpha_default})")
     parser.add_argument("--depth", "-d",
                        type=float,
-                       default=Z_DEPTH,
-                       help=f"Production depth in Å (default: {Z_DEPTH}, i.e., {Z_DEPTH/10} nm)")
-    parser.add_argument("--bin-by-bin", "-b",
+                       default=None,
+                       help=f"Production depth in Å (default: {depth_default}, i.e., {depth_default/10} nm)")
+    parser.add_argument("--bin-by-bin",
                        action="store_true",
                        help="Process histogram bin-by-bin instead of sampling (default: sampling)")
     
     args = parser.parse_args()
     
-    # Update global constants if provided
-    global EPSILON, B, ALPHA, Z_DEPTH, P_ESC
-    EPSILON = args.epsilon
-    B = args.B
-    ALPHA = args.alpha
-    Z_DEPTH = args.depth
-    P_ESC = B * exp(-ALPHA * Z_DEPTH)
+    # Update constants if provided via command line
+    epsilon_val = args.epsilon if args.epsilon is not None else EPSILON
+    B_val = args.B if args.B is not None else B
+    alpha_val = args.alpha if args.alpha is not None else ALPHA
+    depth_val = args.depth if args.depth is not None else Z_DEPTH
+    p_esc_val = B_val * exp(-alpha_val * depth_val)
+    
+    # Update module-level constants for use in functions
+    EPSILON = epsilon_val
+    B = B_val
+    ALPHA = alpha_val
+    Z_DEPTH = depth_val
+    P_ESC = p_esc_val
     
     print("=" * 70)
     print("Monte Carlo SEY Calculation for Muon Interactions")

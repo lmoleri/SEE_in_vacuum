@@ -42,17 +42,21 @@ make
 
 ## Running the Simulation
 
-### Interactive Mode (with visualization):
+The simulation can be run in several ways:
+
+### 1. Interactive Mode (with visualization):
 ```bash
 ./SEE_in_vacuum
 ```
+Opens the Geant4 visualization interface for interactive exploration.
 
-### Batch Mode:
+### 2. Batch Mode (with macro file):
 ```bash
 ./SEE_in_vacuum ../run.mac
 ```
+Runs a single simulation using a Geant4 macro file.
 
-### Parametric Scan (JSON)
+### 3. Parametric Scan (JSON)
 
 Create a JSON file with arrays of thickness and energy values, then pass it to the executable:
 
@@ -152,11 +156,73 @@ bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summar
 
 Model comparison canvases are also exported to `plots/` alongside the summary root file.
 
+### 4. Monte Carlo Post-Processing (Toy Model for Muon SEY)
+
+For muon simulations, a custom Monte Carlo method can be applied to calculate secondary electron emission (SEY) from energy deposition data. This post-processing step uses a probabilistic model to estimate SEY based on:
+
+- Energy deposition per event (from Geant4)
+- Physical parameters (energy per free electron, escape probability, production depth)
+- Poisson statistics for secondary electron emission
+
+**Usage:**
+```bash
+conda run -n geant4 python calculate_muon_sey.py <input_root_file> [options]
+```
+
+**Example:**
+```bash
+conda run -n geant4 python calculate_muon_sey.py \
+  results/scan_thick5nm_particlemu-_energy4GeV_events10000_modelPAI/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root \
+  --bin-by-bin
+```
+
+**Options:**
+- `--histogram, -H`: Histogram name (default: `EdepPrimary`)
+- `--seed, -s`: Random seed (default: 42)
+- `--epsilon, -e`: Energy per free electron in eV (default: 27.0)
+- `--B`: Surface escape probability (default: 0.46)
+- `--alpha, -a`: Attenuation coefficient in Å⁻¹ (default: 0.0075)
+- `--depth, -d`: Production depth in Å (default: 25.0 = 2.5 nm)
+- `--bin-by-bin`: Process histogram bin-by-bin instead of sampling
+
+**Output:**
+- ROOT file: `*_SEY_MonteCarlo.root` (contains SEY histogram and statistics)
+- PDF plot: Saved in `plots/` folder with logarithmic Y-axis
+- Statistics: Mean SEY, expected value, standard deviation, etc.
+
+**Processing Modes:**
+- **Histogram sampling** (default): Samples energy deposition from the histogram distribution
+- **Bin-by-bin** (`--bin-by-bin`): Processes each histogram bin as actual events (more accurate)
+
+**Physical Model:**
+The Monte Carlo method implements:
+- Internal free electron production: $N_{\rm int} = \Delta E / \epsilon$ (where $\epsilon = 27$ eV)
+- Escape probability: $P_{\rm esc} = B e^{-\alpha z}$ (at depth $z = 2.5$ nm)
+- Poisson sampling for secondary electron emission per event
+- Total SEY calculation across all events
+
+See `MUON_SEY_MONTE_CARLO.md` for detailed documentation of the physical model and implementation.
+
+**Workflow:**
+1. Run Geant4 muon simulation (e.g., with PAI model)
+2. Extract energy deposition histogram (`EdepPrimary`)
+3. Apply Monte Carlo post-processing to calculate SEY
+4. Compare results with experimental data or other models
+
 Notes:
 - The energy deposition plot uses log Y scale by default.
 - Annotations read `RunMeta` from the ROOT file.
 - Plot titles/legends include the selected EM model (PAI/Livermore/Penelope).
 - EM low-energy cutoffs are set to 0.1 eV (see `src/PhysicsList.cc`).
+
+## Simulation Methods Summary
+
+| Method | Use Case | Input | Output |
+|--------|----------|-------|--------|
+| **Interactive** | Exploration, debugging | None (GUI) | Single ROOT file |
+| **Batch (Macro)** | Single simulation run | `.mac` file | Single ROOT file |
+| **Parametric Scan** | Systematic studies | `.json` file | Multiple ROOT files |
+| **Monte Carlo Post-Processing** | Muon SEY calculation | ROOT file from scan | SEY plots and statistics |
 
 ## Customization
 
@@ -166,8 +232,10 @@ You can modify the electron gun parameters in `src/PrimaryGeneratorAction.cc`:
 - Direction: Change `SetParticleMomentumDirection()`
 
 You can also modify the Al2O3 geometry in `src/DetectorConstruction.cc`:
-- Thickness: Change the `thickness` variable
+- Thickness: Change the `thickness` variable (or use JSON config)
 - Diameter: Change the `radius` variable
+
+For parametric scans, all parameters are configurable via JSON (see example above).
 
 ## Example Macro File (run.mac)
 
@@ -186,3 +254,8 @@ Create a `run.mac` file to run simulations:
 # Optional: Change electron direction
 /gun/direction 0 0 1
 ```
+
+## Additional Documentation
+
+- **`MUON_SEY_MONTE_CARLO.md`**: Detailed documentation of the Monte Carlo physical model and implementation for muon secondary electron emission
+- **`MUON_SEY_USAGE.md`**: Usage guide for the Monte Carlo SEY calculation script with examples and troubleshooting
