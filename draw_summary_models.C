@@ -116,40 +116,35 @@ TH1* OptimizeEdepPrimaryAxis(TH1* hist) {
     
     if (entries == 0 || mean <= 0) return hist;
     
-    // If RMS is very small (all data in one bin or very narrow), use mean-based range
+    // Always find the actual min and max from non-empty bins to capture all data
+    // This is important for skewed distributions (e.g., muons with most events at low energy
+    // but a few outliers at high energy)
+    double actualMin = hist->GetXaxis()->GetXmax();
+    double actualMax = hist->GetXaxis()->GetXmin();
+    bool foundData = false;
+    for (int i = 1; i <= hist->GetNbinsX(); i++) {
+        if (hist->GetBinContent(i) > 0) {
+            foundData = true;
+            double binLow = hist->GetXaxis()->GetBinLowEdge(i);
+            double binUp = hist->GetXaxis()->GetBinUpEdge(i);
+            if (binLow < actualMin) actualMin = binLow;
+            if (binUp > actualMax) actualMax = binUp;
+        }
+    }
+    
     double dataMin, dataMax, range;
-    if (rms < mean * 0.01) {
-        // All data clustered around mean - use mean ± reasonable range
-        // For very narrow distributions, ensure we capture the actual data range
-        // Find the actual min and max from non-empty bins
-        double actualMin = hist->GetXaxis()->GetXmax();
-        double actualMax = hist->GetXaxis()->GetXmin();
-        bool foundData = false;
-        for (int i = 1; i <= hist->GetNbinsX(); i++) {
-            if (hist->GetBinContent(i) > 0) {
-                foundData = true;
-                double binLow = hist->GetXaxis()->GetBinLowEdge(i);
-                double binUp = hist->GetXaxis()->GetBinUpEdge(i);
-                if (binLow < actualMin) actualMin = binLow;
-                if (binUp > actualMax) actualMax = binUp;
-            }
-        }
-        if (foundData) {
-            // Use actual data range with padding
-            range = std::max((actualMax - actualMin) * 1.2, std::max(mean * 0.2, 1.0));
-            dataMin = std::max(0.0, actualMin - range * 0.1);
-            dataMax = actualMax + range * 0.1;
-        } else {
-            // Fallback to mean-based range
-            range = std::max(mean * 0.2, 1.0);
-            dataMin = std::max(0.0, mean - range);
-            dataMax = mean + range;
-        }
-    } else {
-        // Data has spread - use mean ± 3*RMS for range
-        dataMin = std::max(0.0, mean - 3.0 * rms);
-        dataMax = mean + 3.0 * rms;
+    if (foundData) {
+        // Use actual data range with padding (5% on each side, but at least 2 bin widths)
+        const double binWidth = hist->GetBinWidth(1);
+        const double padding = std::max((actualMax - actualMin) * 0.05, binWidth * 2.0);
+        dataMin = std::max(0.0, actualMin - padding);
+        dataMax = actualMax + padding;
         range = dataMax - dataMin;
+    } else {
+        // Fallback to mean-based range if no data found (shouldn't happen)
+        range = std::max(mean * 0.2, 1.0);
+        dataMin = std::max(0.0, mean - range);
+        dataMax = mean + range;
     }
     const double currentBinWidth = hist->GetBinWidth(1);
     const double currentRange = hist->GetXaxis()->GetXmax() - hist->GetXaxis()->GetXmin();
@@ -448,10 +443,24 @@ void draw_summary_models(const char* dirPai,
         const double thicknessNm = sorted.front().thicknessNm;
         const double energyMeV = sorted.front().energyMeV;
 
-        TString titleSuffix = Form("%s, t=%.2f nm, %s",
+        // Get number of primary particles from first histogram (all should have same number)
+        int nPrimaries = 0;
+        if (!sorted.empty()) {
+            TFile* fTest = TFile::Open(sorted[0].path.c_str(), "READ");
+            if (fTest && !fTest->IsZombie()) {
+                TH1* hTest = (TH1*)fTest->Get("EdepPrimary");
+                if (hTest) {
+                    nPrimaries = static_cast<int>(hTest->GetEntries());
+                }
+                fTest->Close();
+            }
+        }
+        
+        TString titleSuffix = Form("%s, t=%.2f nm, %s, N=%d",
                                    particleText.c_str(),
                                    thicknessNm > 0. ? thicknessNm : 0.0,
-                                   EnergyLabel(energyMeV).Data());
+                                   EnergyLabel(energyMeV).Data(),
+                                   nPrimaries);
 
         TString canvasName = Form("EdepPrimaryModels_E%lld", kv.first);
         TCanvas* c1 = new TCanvas(canvasName, "EdepPrimary models", 900, 700);
@@ -655,6 +664,14 @@ void draw_summary_models(const char* dirPai,
         }
         
         leg1->Draw();
+        
+        // Add text annotation with total number of events
+        TLatex info1;
+        info1.SetNDC();
+        info1.SetTextSize(0.03);
+        info1.SetTextAlign(12);
+        info1.DrawLatex(0.45, 0.60, Form("Primary particles: %d", nPrimaries));
+        
         c1->Update();
 
         // Create a zoomed version of EdepPrimaryModels (0-100eV range) for 1MeV electrons and 4GeV muons
@@ -730,6 +747,14 @@ void draw_summary_models(const char* dirPai,
             }
             
             leg1zoom->Draw();
+            
+            // Add text annotation with total number of events
+            TLatex info1zoom;
+            info1zoom.SetNDC();
+            info1zoom.SetTextSize(0.03);
+            info1zoom.SetTextAlign(12);
+            info1zoom.DrawLatex(0.45, 0.60, Form("Primary particles: %d", nPrimaries));
+            
             c1zoom->Update();
         }
 
@@ -801,6 +826,14 @@ void draw_summary_models(const char* dirPai,
             leg2->AddEntry(hc, entry.model.c_str(), "l");
         }
         leg2->Draw();
+        
+        // Add text annotation with total number of events
+        TLatex info2;
+        info2.SetNDC();
+        info2.SetTextSize(0.03);
+        info2.SetTextAlign(12);
+        info2.DrawLatex(0.65, 0.60, Form("Primary particles: %d", nPrimaries));
+        
         c2->Update();
 
         TString canvasNameStepLen = Form("StepLengthModels_E%lld", kv.first);
@@ -936,6 +969,14 @@ void draw_summary_models(const char* dirPai,
         }
         
         leg3->Draw();
+        
+        // Add text annotation with total number of events
+        TLatex info3;
+        info3.SetNDC();
+        info3.SetTextSize(0.03);
+        info3.SetTextAlign(12);
+        info3.DrawLatex(0.45, 0.60, Form("Primary particles: %d", nPrimaries));
+        
         c3->Update();
 
         // Create a zoomed version of StepLengthModels (0-10nm range)
@@ -991,6 +1032,14 @@ void draw_summary_models(const char* dirPai,
         }
         
         leg3zoom->Draw();
+        
+        // Add text annotation with total number of events
+        TLatex info3zoom;
+        info3zoom.SetNDC();
+        info3zoom.SetTextSize(0.03);
+        info3zoom.SetTextAlign(12);
+        info3zoom.DrawLatex(0.45, 0.60, Form("Primary particles: %d", nPrimaries));
+        
         c3zoom->Update();
 
         out->cd();
