@@ -626,31 +626,38 @@ def create_plot(sey_hist, statistics, input_file_path, n_int_hist=None):
     
     # Try to add text, but don't fail if it doesn't work
     try:
-        # Results: left box (same style as parameter box)
-        rbox = TPaveText(0.15, 0.48, 0.48, 0.88, "NDC")
+        # Results: box with titled sections, right of histogram and large enough for text
+        rbox = TPaveText(0.21, 0.40, 0.56, 0.88, "NDC")
         rbox.SetFillColor(0)
         rbox.SetBorderSize(1)
         rbox.SetTextAlign(12)
         rbox.SetTextSize(0.022)
         rbox.AddText("Monte Carlo SEY Calculation")
-        rbox.AddText("Mean SEY: %.4f" % statistics['mean_SE'])
-        rbox.AddText("Expected (histogram): %.4f" % statistics['expected_mean'])
-        if statistics.get('expected_mean_from_sampled') is not None:
-            rbox.AddText("Expected (from sampled Edep): %.4f" % statistics['expected_mean_from_sampled'])
-        rbox.AddText("Total SE: %d" % statistics['total_SE'])
-        rbox.AddText("Events with SE (actual MC): %.2f%% (%d/%d)" % (
+        rbox.AddText(" ")
+        rbox.AddText("Results")
+        rbox.AddText("  Mean SEY: %.4f" % statistics['mean_SE'])
+        rbox.AddText("  Total SE: %d" % statistics['total_SE'])
+        rbox.AddText("  Events with SE (actual MC): %.2f%% (%d/%d)" % (
             statistics['fraction_with_SE'] * 100.0,
             statistics['n_events_with_SE'],
             statistics['n_events']))
+        rbox.AddText(" ")
+        rbox.AddText("Check: Mean SEY = Expected")
+        rbox.AddText("  Expected (histogram): %.4f" % statistics['expected_mean'])
+        if statistics.get('expected_mean_from_sampled') is not None:
+            rbox.AddText("  Expected (from sampled Edep): %.4f" % statistics['expected_mean_from_sampled'])
+        rbox.AddText(" ")
         if 'fraction_with_edep' in statistics and 'fraction_SE_given_edep' in statistics and 'expected_fraction_with_SEE' in statistics:
-            rbox.AddText("Edep>0: %.2f%%,  P(#geq 1 SE | Edep>0): %.1f%% (theor.)" % (
+            rbox.AddText("Check: fraction with SEE")
+            rbox.AddText("  Edep>0: %.2f%%,  P(#geq 1 SE|Edep>0): %.1f%%" % (
                 statistics['fraction_with_edep'] * 100.0,
                 statistics['fraction_SE_given_edep'] * 100.0))
-            rbox.AddText("Expected (all bins #Sigma): %.2f%%" % (statistics['expected_fraction_with_SEE'] * 100.0))
+            rbox.AddText("  Expected (all bins #Sigma): %.2f%%" % (statistics['expected_fraction_with_SEE'] * 100.0))
+            rbox.AddText("  Actual (MC): %.2f%%" % (statistics['fraction_with_SE'] * 100.0))
         rbox.Draw()
         
-        # Parameters: right box, moved up so it does not overlap the stat box
-        pbox = TPaveText(0.58, 0.48, 0.88, 0.68, "NDC")
+        # Parameters: right box, just below the stat box (top-right)
+        pbox = TPaveText(0.58, 0.52, 0.88, 0.72, "NDC")
         pbox.SetFillColor(0)
         pbox.SetBorderSize(1)
         pbox.SetTextAlign(12)
@@ -678,7 +685,7 @@ def create_plot(sey_hist, statistics, input_file_path, n_int_hist=None):
             rbox2.SetTextSize(0.022)
             rbox2.AddText("N_{int} = #DeltaE / #varepsilon  (#varepsilon = %.0f eV)" % EPSILON)
             rbox2.Draw()
-            pbox2 = TPaveText(0.58, 0.48, 0.88, 0.68, "NDC")
+            pbox2 = TPaveText(0.58, 0.52, 0.88, 0.72, "NDC")
             pbox2.SetFillColor(0)
             pbox2.SetBorderSize(1)
             pbox2.SetTextAlign(12)
