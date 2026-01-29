@@ -35,3 +35,11 @@ Makefile
 *.tmp
 *.log
 *.out
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated outputs (optional: remove to commit plots/results)
+plots/
+results/
