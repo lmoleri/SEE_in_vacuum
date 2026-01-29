@@ -22,27 +22,14 @@ import numpy as np
 try:
     from calculate_muon_sey import sample_poisson
 except ImportError:
-    # Standalone fallback
+    # Standalone fallback: use ROOT's Poisson
     def sample_poisson(mu, random_gen=None):
+        import ROOT
         if random_gen is None:
-            import ROOT
             random_gen = ROOT.gRandom
         if mu <= 0:
             return 0
-        if mu > 100:
-            sample = random_gen.Gaus(mu, np.sqrt(mu))
-            return max(0, int(round(sample)))
-        u = random_gen.Uniform(0.0, 1.0)
-        k = 0
-        cumulative = exp(-mu)
-        term = exp(-mu)
-        while cumulative < u:
-            k += 1
-            term = term * mu / k
-            cumulative += term
-            if k > 10000 or term < 1e-100:
-                break
-        return k
+        return int(random_gen.Poisson(mu))
 
 
 def load_config(config_path):

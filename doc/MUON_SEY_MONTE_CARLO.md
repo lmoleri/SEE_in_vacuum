@@ -76,10 +76,7 @@ For the $i$-th ionizing muon interaction with the shell:
 
 2. Generate a uniform random number $u \in (0,1)$
 
-3. Sample $N_{\rm SE}^{(i)}$ from the Poisson distribution using the cumulative distribution function (CDF):
-   $$N_{\rm SE}^{(i)} = k \quad \text{such that} \quad \sum_{n=0}^{k}\frac{(\mu^{\rm z}_{N_{\rm int}}^{(i)})^n}{n!}e^{-\mu^{\rm z}_{N_{\rm int}}^{(i)}} \ge u$$
-
-   This means finding the smallest integer $k$ where the cumulative probability exceeds $u$.
+3. Sample $N_{\rm SE}^{(i)}$ from the Poisson distribution. Mathematically this is inverse-CDF sampling; the implementation uses **ROOT's TRandom::Poisson($\mu$)** for correct Poisson variates.
 
 ### Step 8: Total Secondary Electron Yield
 
@@ -127,16 +124,8 @@ for event in events:
     # Calculate Poisson parameter
     mu = N_int * P_esc
     
-    # Sample from Poisson distribution
-    u = random.uniform(0, 1)
-    k = 0
-    cumulative = exp(-mu)  # P(k=0)
-    
-    while cumulative < u:
-        k += 1
-        cumulative += (mu**k / factorial(k)) * exp(-mu)
-    
-    N_SE_i = k
+    # Sample from Poisson distribution (implementation uses ROOT's TRandom::Poisson(mu))
+    N_SE_i = Poisson(mu)
     total_SE += N_SE_i
 
 # Result: total_SE is the total number of secondary electrons
@@ -144,19 +133,9 @@ for event in events:
 
 ### Implementation Details
 
-#### 1. Poisson CDF Sampling
+#### 1. Poisson sampling
 
-The cumulative distribution function for Poisson is:
-$$F(k) = \sum_{n=0}^{k} \frac{\lambda^n}{n!} e^{-\lambda}$$
-
-where $\lambda = \mu^{\rm z}_{N_{\rm int}}^{(i)}$.
-
-To sample $k$ given random $u$:
-- Start with $k=0$, $F(0) = e^{-\lambda}$
-- Increment $k$ and add terms until $F(k) \ge u$
-- Return $k$ as the sampled value
-
-**Optimization**: For large $\lambda$, use normal approximation or other efficient methods.
+The script samples $N_{\rm SE} \sim \text{Poisson}(\mu)$ using **ROOT's TRandom::Poisson($\mu$)**. This ensures correct Poisson variates and consistency: the mean of the sampled $N_{\rm SE}$ over all events equals $\langle \mu \rangle = (\langle \Delta E \rangle/\epsilon)\,P_{\rm esc}$, so **Mean SEY (MC)** matches **Expected (from sampled Edep)** up to statistics. The script reports both **Expected (histogram)** (from the histogram's GetMean()) and **Expected (from sampled Edep)**; the latter must match Mean SEY.
 
 #### 2. Handling Edge Cases
 
@@ -171,13 +150,65 @@ After processing all events:
 - **Variance**: $\sigma^2 = \frac{1}{n-1}\sum_{i=1}^n (N_{\rm SE}^{(i)} - \langle N_{\rm SE} \rangle)^2$
 - **Distribution**: Histogram of $N_{\rm SE}$ values
 
+### Decomposition of results and theoretical P(≥1 SE | Edep > 0)
+
+The script reports a **decomposition** that relates the fraction of events with at least one secondary electron (SEE) to the energy-deposition histogram and the escape probability.
+
+#### Definition of “Edep > 0”
+
+“Edep > 0” is defined by **excluding the histogram bin that contains 0** (the “zero bin”). The number of events with Edep > 0 is therefore the histogram integral minus the content of that bin. This matches the idea that only events that deposit energy *above* the zero bin contribute to the conditional statistics.
+
+#### Quantities from the histogram
+
+- **Fraction of events with Edep > 0**:  
+  $f_{\rm dep} = (\text{integral over all bins} - \text{content of zero bin}) / \text{integral over all bins}$.
+
+- **Mean Edep given Edep > 0**:  
+  $\langle \Delta E \rangle_{\Delta E>0} = \frac{\sum_i n_i\,E_i}{\text{integral\_positive}}$  
+  where the sum runs over all bins *except* the zero bin, $n_i$ is the bin content and $E_i$ the bin center (eV).
+
+#### Theoretical P(≥1 SE | Edep > 0)
+
+For a single event with energy deposition $\Delta E$, the number of secondary electrons is $N_{\rm SE} \sim \text{Poisson}(\mu)$ with $\mu = (\Delta E/\epsilon)\,\langle P_{\rm esc}\rangle_z$. So the probability of at least one SE is:
+
+$$\Pr(N_{\rm SE} \ge 1 \mid \Delta E) = 1 - e^{-\mu} = 1 - \exp\!\left(-\frac{\Delta E}{\epsilon}\,\langle P_{\rm esc}\rangle_z\right).$$
+
+The **theoretical P(≥1 SE | Edep > 0)** is the average of this quantity over the “Edep > 0” part of the histogram, **weighted by bin content**:
+
+$$\Pr(N_{\rm SE} \ge 1 \mid \Delta E > 0)_{\rm theory}
+= \frac{\sum_i n_i\,\bigl(1 - \exp(-(E_i/\epsilon)\,\langle P_{\rm esc}\rangle_z)\bigr)}{\text{integral\_positive}},$$
+
+where the sum is over all bins *except* the zero bin, $n_i$ is the content of bin $i$, and $E_i$ is the bin center (eV). So each bin contributes with weight $n_i$; the numerator is the sum of “content × probability of at least one SE at that bin center”, and the denominator is the total number of events with Edep > 0.
+
+This is exactly what the script computes and reports as “P(≥1 SE | Edep > 0) [theoretical from histogram]” (e.g. 52.7%): it loops over bins (skipping the zero bin), and for each bin adds $n_i \times (1 - \exp(-\mu_i))$ to the numerator, with $\mu_i = (E_i/\epsilon)\,P_{\rm esc}$.
+
+#### Expected vs actual fraction with SEE
+
+The **expected** fraction of events with at least one SEE is computed so it is directly comparable to the **actual** MC fraction (same population: all events; same definition: fraction with $N_{\rm SE} \ge 1$). Sum over *all* histogram bins (including the bin containing zero):
+
+$$\text{expected fraction with SEE} = \sum_i \frac{n_i}{N_{\rm total}}\, \Pr(N_{\rm SE} \ge 1 \mid E_i) = \sum_i \frac{n_i}{N_{\rm total}}\, \bigl(1 - e^{-(E_i/\epsilon)\,\langle P_{\rm esc}\rangle_z}\bigr),$$
+
+where $n_i$ is the content of bin $i$, $E_i$ is the bin center (eV), and $N_{\rm total}$ is the histogram integral. For bins with $E_i \le 0$, $\Pr(N_{\rm SE} \ge 1 \mid E_i) = 0$. This matches the MC procedure: each event is drawn from a bin (with probability $n_i/N_{\rm total}$) and then $N_{\rm SE}$ is Poisson with mean $(E_i/\epsilon)\,P_{\rm esc}$ when using bin centers, or the same in expectation when using GetRandom() within bins.
+
+The **actual** fraction with SEE (from the Monte Carlo) is the fraction of events for which the sampled $N_{\rm SE} \ge 1$ . **Expected and actual are directly comparable** and should agree within MC sampling noise. The script reports both; small differences are due to finite statistics and (when using GetRandom()) sampling within bins rather than at bin centers.
+
+#### Single ionization (Edep ≈ ε)
+
+For a single “ionization” (ΔE ≈ ε = 27 eV), $\mu = \langle P_{\rm esc}\rangle_z \approx 0.38$, so:
+
+$$\Pr(N_{\rm SE} \ge 1 \mid \Delta E \approx \epsilon) \approx 1 - e^{-0.38} \approx 32\%.$$
+
+So **32%** is the probability of at least one SE when the deposition is about one ionization. The **theoretical P(≥1 SE | Edep > 0)** (e.g. 52.7%) is higher because it is an average over the full “Edep > 0” distribution, which has a tail to higher ΔE; those higher depositions have larger μ and hence larger $\Pr(N_{\rm SE} \ge 1)$.
+
 ## Expected Output
 
 1. **Per-event secondary electron counts**: $N_{\rm SE}^{(i)}$ for each event
 2. **Total secondary electron yield**: $N_{\rm SE}$ summed over all events
 3. **Average SEY**: Mean number of secondary electrons per muon interaction
 4. **Distribution histogram**: Histogram of $N_{\rm SE}$ values
-5. **Comparison with Geant4**: Compare Monte Carlo results with direct Geant4 tracking (if available)
+5. **N_int histogram**: Distribution of $N_{\rm int} = \Delta E/\epsilon$ per event (filled once per event when using histogram sampling; Entries = number of events with Edep > 0)
+6. **Edep debug plot** (when using histogram sampling): Fine-binned (0.5 eV) histogram of MC-sampled energy deposition values from EdepPrimary, saved as PDF and ROOT (`*_Edep_debug.pdf`, `*_Edep_debug.root`), for checking behavior near zero
+7. **Consistency**: Mean SEY (MC) ≈ Expected (from sampled Edep); expected and actual fraction with SEE agree within MC noise
 
 ## Future Enhancements
 
@@ -203,10 +234,10 @@ After processing all events:
    - Implement Monte Carlo sampling
    - Generate output histograms and statistics
 
-2. **Python script** (alternative):
-   - Use `uproot` or `ROOT` Python bindings to read ROOT files
-   - Use `numpy` for random number generation and statistics
-   - Use `scipy.stats` for Poisson distribution functions
+2. **Python script** (current implementation):
+   - Use ROOT Python bindings to read ROOT files and for Poisson sampling (TRandom::Poisson)
+   - Use `numpy` for statistics
+   - Poisson variates: ROOT's TRandom::Poisson($\mu$) for correct mean and consistency with Expected
 
 3. **Integration with existing code**:
    - Could be added as a post-processing step in `RunAction::EndOfRunAction()`

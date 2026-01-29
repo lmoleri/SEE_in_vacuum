@@ -20,7 +20,7 @@ import os
 import numpy as np
 from math import exp, factorial
 import ROOT
-from ROOT import TFile, TH1D, TCanvas, TLegend, TLatex, gStyle, gRandom
+from ROOT import TFile, TH1D, TCanvas, TLegend, TLatex, TPaveText, gStyle, gRandom
 
 # Physical constants
 EPSILON = 27.0  # eV - average energy per internal free electron production
@@ -66,13 +66,13 @@ def poisson_cdf(k, mu):
 
 def sample_poisson(mu, random_gen=None):
     """
-    Sample from Poisson distribution using inverse CDF method.
+    Sample from Poisson(μ) using ROOT's TRandom::Poisson.
     
     Parameters:
     -----------
     mu : float
         Poisson parameter (mean)
-    random_gen : TRandom3 or None
+    random_gen : TRandom or None
         ROOT random number generator (if None, uses gRandom)
     
     Returns:
@@ -82,41 +82,9 @@ def sample_poisson(mu, random_gen=None):
     """
     if random_gen is None:
         random_gen = gRandom
-    
     if mu <= 0:
         return 0
-    
-    # For very large mu, use normal approximation
-    if mu > 100:
-        # Normal approximation: N(mu, sqrt(mu))
-        sample = random_gen.Gaus(mu, np.sqrt(mu))
-        return max(0, int(round(sample)))
-    
-    # Generate uniform random number
-    u = random_gen.Uniform(0.0, 1.0)
-    
-    # Find smallest k such that CDF(k) >= u
-    k = 0
-    cumulative = exp(-mu)  # P(k=0)
-    term = exp(-mu)  # Current term P(k)
-    
-    while cumulative < u:
-        k += 1
-        # Calculate P(k) = (mu^k / k!) * exp(-mu)
-        # Use recurrence: P(k) = P(k-1) * mu / k
-        term = term * mu / k
-        cumulative += term
-        
-        # Safety check for numerical issues
-        if k > 10000:
-            print(f"Warning: Poisson sampling reached k={k} for mu={mu:.2f}, u={u:.6f}")
-            break
-        # Check for numerical underflow
-        if term < 1e-100:
-            # Term is negligible, we've converged
-            break
-    
-    return k
+    return int(random_gen.Poisson(mu))
 
 
 def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling=True):
@@ -147,6 +115,13 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
     per_event_SE = []
     total_SE = 0
     
+    # Upper edge of bin containing 0: "Edep > 0" means above this (match histogram definition)
+    bin_zero = edep_hist.GetXaxis().FindBin(0.0)
+    if 1 <= bin_zero <= edep_hist.GetNbinsX():
+        edep_positive_threshold = edep_hist.GetXaxis().GetBinUpEdge(bin_zero)
+    else:
+        edep_positive_threshold = 0.0
+    
     print(f"Processing {n_events} events...")
     print(f"Physical parameters:")
     print(f"  ε (energy per free electron) = {EPSILON:.1f} eV")
@@ -156,6 +131,12 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
     print(f"  P_esc(z) = {P_ESC:.4f}")
     print()
     
+    # Track sampled Edep when Edep > threshold (for comparison with histogram)
+    sampled_edep_when_positive = []
+    n_MC_edep_positive = 0   # MC count with Edep > threshold (match histogram "Edep > 0")
+    n_MC_edep_positive_with_SE = 0
+    sampled_edep_debug = []  # All sampled Edep values (for debug plot, histogram sampling only)
+    
     if use_histogram_sampling:
         # Method 1: Sample energy deposition from histogram distribution
         # This treats the histogram as a probability distribution
@@ -163,19 +144,23 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
         for i in range(n_events):
             # Sample energy deposition from the histogram distribution
             delta_E = edep_hist.GetRandom()  # Sample energy deposition in eV
+            sampled_edep_debug.append(delta_E)
             
             if delta_E <= 0:
                 per_event_SE.append(0)
                 continue
             
-            # Calculate average number of free electrons
-            N_int = delta_E / EPSILON
+            # Count "Edep > 0" only when above zero bin (match histogram definition)
+            if delta_E > edep_positive_threshold:
+                sampled_edep_when_positive.append(delta_E)
+                n_MC_edep_positive += 1
+            # Poisson parameter: μ = (ΔE/ε) * P_esc (must apply P_esc)
+            mu = (delta_E / EPSILON) * P_ESC
+            # Sample from Poisson distribution (ROOT's Poisson; custom sample_poisson had a bug)
+            N_SE_i = int(random_gen.Poisson(mu)) if mu > 0 else 0
             
-            # Calculate Poisson parameter
-            mu = N_int * P_ESC
-            
-            # Sample from Poisson distribution
-            N_SE_i = sample_poisson(mu, random_gen)
+            if delta_E > edep_positive_threshold and N_SE_i >= 1:
+                n_MC_edep_positive_with_SE += 1
             
             per_event_SE.append(N_SE_i)
             total_SE += N_SE_i
@@ -209,9 +194,8 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
                 
                 # Calculate Poisson parameter
                 mu = N_int * P_ESC
-                
-                # Sample from Poisson distribution
-                N_SE_i = sample_poisson(mu, random_gen)
+                # Sample from Poisson distribution (use ROOT's Poisson)
+                N_SE_i = int(random_gen.Poisson(mu)) if mu > 0 else 0
                 
                 per_event_SE.append(N_SE_i)
                 total_SE += N_SE_i
@@ -239,6 +223,55 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
     mean_edep = edep_hist.GetMean()
     expected_mean = (mean_edep / EPSILON) * P_ESC
     
+    # Fraction of events with Edep > 0: exclude the bin that contains 0 (not bins with center > 0)
+    integral_total = edep_hist.Integral()
+    bin_containing_zero = edep_hist.GetXaxis().FindBin(0.0)
+    if 1 <= bin_containing_zero <= edep_hist.GetNbinsX():
+        content_zero_bin = edep_hist.GetBinContent(bin_containing_zero)
+        integral_positive = integral_total - content_zero_bin
+    else:
+        integral_positive = integral_total
+    fraction_with_edep = (integral_positive / integral_total) if integral_total > 0 else 0.0
+    
+    # From histogram: mean Edep given Edep > 0, and theoretical P(≥1 SE | Edep > 0)
+    # "Edep > 0" = exclude the bin that contains 0 (same as integral_positive above).
+    # For each bin i (center E_i, content n_i): P(≥1 SE | E_i) = 1 - exp(-(E_i/ε)*P_esc).
+    # Theoretical P(≥1 SE | Edep>0) = Σ (n_i * P(≥1 SE | E_i)) / integral_positive  (weighted by bin content).
+    sum_edep_positive = 0.0
+    sum_p_at_least_one_SE = 0.0
+    for bin_i in range(1, edep_hist.GetNbinsX() + 1):
+        if bin_i == bin_containing_zero:
+            continue
+        center = edep_hist.GetBinCenter(bin_i)
+        content = edep_hist.GetBinContent(bin_i)
+        if content <= 0:
+            continue
+        sum_edep_positive += center * content
+        mu_bin = (center / EPSILON) * P_ESC
+        p_at_least_one = 1.0 - exp(-mu_bin)
+        sum_p_at_least_one_SE += content * p_at_least_one
+    mean_edep_given_positive = (sum_edep_positive / integral_positive) if integral_positive > 0 else 0.0
+    theoretical_P_SE_given_edep = (sum_p_at_least_one_SE / integral_positive) if integral_positive > 0 else 0.0
+    # P(≥1 SE | Edep > 0): use theoretical (histogram-based) as the physics expectation
+    fraction_SE_given_edep = theoretical_P_SE_given_edep if integral_positive > 0 else 0.0
+    # Expected fraction with SEE: sum over ALL bins so it is comparable to actual MC fraction.
+    # E[P(≥1 SE)] = Σ_i (n_i / N_total) * P(≥1 SE | E_i). Includes the zero bin (small E can still yield SE).
+    expected_fraction_with_SEE = 0.0
+    for bin_i in range(1, edep_hist.GetNbinsX() + 1):
+        center = edep_hist.GetBinCenter(bin_i)
+        content = edep_hist.GetBinContent(bin_i)
+        if content <= 0:
+            continue
+        mu_bin = (center / EPSILON) * P_ESC
+        p_at_least_one = (1.0 - exp(-mu_bin)) if center > 0 else 0.0
+        expected_fraction_with_SEE += (content / integral_total) * p_at_least_one
+    
+    # Mean Edep (given Edep > 0) from MC samples (histogram sampling only)
+    mean_edep_MC_given_positive = float(np.mean(sampled_edep_when_positive)) if sampled_edep_when_positive else 0.0
+    
+    # For summary: use n_MC_edep_positive when histogram sampling so reported fraction is consistent
+    n_events_with_edep_MC = n_MC_edep_positive if (use_histogram_sampling and n_MC_edep_positive > 0) else None
+    
     statistics = {
         'total_SE': total_SE,
         'mean_SE': mean_SE,
@@ -250,8 +283,28 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
         'mean_edep': mean_edep,
         'n_events': n_events,
         'n_events_with_SE': n_events_with_SE,
-        'fraction_with_SE': fraction_with_SE
+        'fraction_with_SE': fraction_with_SE,
+        'fraction_with_edep': fraction_with_edep,
+        'fraction_SE_given_edep': fraction_SE_given_edep,
+        'mean_edep_given_positive': mean_edep_given_positive,
+        'theoretical_P_SE_given_edep': theoretical_P_SE_given_edep,
+        'expected_fraction_with_SEE': expected_fraction_with_SEE,
+        'mean_edep_MC_given_positive': mean_edep_MC_given_positive,
+        'n_MC_edep_positive': n_MC_edep_positive,
+        'n_MC_edep_positive_with_SE': n_MC_edep_positive_with_SE,
+        'sampled_edep_debug': sampled_edep_debug if use_histogram_sampling else None,
     }
+    # Consistency: ⟨N_SE⟩ = ⟨μ⟩ = ⟨ΔE⟩/ε * P_esc. From sampled Edep, expected mean must match mean SEY.
+    if use_histogram_sampling and sampled_edep_debug:
+        mean_sampled_edep = float(np.mean(sampled_edep_debug))
+        expected_mean_from_sampled = (mean_sampled_edep / EPSILON) * P_ESC
+        statistics['mean_sampled_edep'] = mean_sampled_edep
+        statistics['expected_mean_from_sampled'] = expected_mean_from_sampled
+        # Sanity: Mean SEY (MC) must equal Expected (from sampled Edep) up to statistics
+        rel_diff = abs(mean_SE - expected_mean_from_sampled) / (expected_mean_from_sampled + 1e-12)
+        if rel_diff > 0.1:
+            print("WARNING: Mean SEY (MC) = {:.4f} vs Expected (from sampled Edep) = {:.4f} (rel diff {:.1%}). Check P_esc applied in sampling.".format(
+                mean_SE, expected_mean_from_sampled, rel_diff))
     
     return total_SE, per_event_SE, statistics
 
@@ -329,9 +382,36 @@ def process_histogram_from_file(root_file_path, hist_name="EdepPrimary", seed=42
     if sey_hist.GetEntries() > 0:
         sey_hist.SetMinimum(0)  # Start Y-axis at 0
     
+    # Build histogram of number of ionized electrons per event: N_int = Edep/ε
+    # Fill per event from MC-sampled Edep so Entries = n_events (one entry per event).
+    edep_xmax = edep_hist.GetXaxis().GetXmax()
+    n_int_max = max(1.0, edep_xmax / EPSILON * 1.05)
+    n_int_bins = min(400, max(100, int(n_int_max)))
+    n_int_hist = TH1D("N_int", "Number of ionized electrons per event (N_{int} = #DeltaE/#varepsilon)",
+                      n_int_bins, 0.0, n_int_max)
+    n_int_hist.SetXTitle("N_{int} = #DeltaE / #varepsilon")
+    n_int_hist.SetYTitle("Number of Events")
+    n_int_hist.SetLineColor(ROOT.kOrange + 2)
+    n_int_hist.SetFillColor(ROOT.kOrange + 2)
+    n_int_hist.SetFillStyle(3004)
+    if statistics.get("sampled_edep_debug"):
+        for edep in statistics["sampled_edep_debug"]:
+            if edep > 0:
+                n_int_hist.Fill(edep / EPSILON)
+    else:
+        # Bin-by-bin mode: fill once per event using bin center and content
+        for bin_i in range(1, edep_hist.GetNbinsX() + 1):
+            center = edep_hist.GetBinCenter(bin_i)
+            content = edep_hist.GetBinContent(bin_i)
+            if content <= 0 or center <= 0:
+                continue
+            n_int_val = center / EPSILON
+            for _ in range(int(content)):
+                n_int_hist.Fill(n_int_val)
+    
     # Create plot FIRST (before writing to file, to keep histogram valid)
     try:
-        create_plot(sey_hist, statistics, root_file_path)
+        create_plot(sey_hist, statistics, root_file_path, n_int_hist=n_int_hist)
     except Exception as e:
         print("Warning: Could not create plot: {}".format(e))
         import traceback
@@ -343,6 +423,7 @@ def process_histogram_from_file(root_file_path, hist_name="EdepPrimary", seed=42
     
     # Write histograms
     sey_hist.Write()
+    n_int_hist.Write()
     edep_hist.Write("EdepPrimary_original")  # Save original for reference
     
     # Create summary text
@@ -363,7 +444,9 @@ Results:
   Total events processed: {statistics['n_events']}
   Total secondary electrons: {statistics['total_SE']}
   Mean SEY per event: {statistics['mean_SE']:.4f}
-  Expected mean (theoretical): {statistics['expected_mean']:.4f}
+  Expected mean (theoretical, from histogram GetMean): {statistics['expected_mean']:.4f}
+  Expected mean from sampled Edep (must match Mean SEY): {statistics.get('expected_mean_from_sampled', statistics['expected_mean']):.4f}
+  Mean sampled Edep (MC): {statistics.get('mean_sampled_edep', statistics['mean_edep']):.2f} eV
   Standard deviation: {statistics['std_SE']:.4f}
   Median SEY: {statistics['median_SE']:.1f}
   Min SEY: {statistics['min_SE']}
@@ -373,6 +456,15 @@ Results:
   Mean free electrons per event: {statistics['mean_edep']/EPSILON:.2f}
   
   Events with at least one SE: {statistics['n_events_with_SE']}/{statistics['n_events']} ({statistics['fraction_with_SE']*100:.2f}%)
+  
+  Decomposition (histogram-based vs actual MC):
+  - Fraction of events with Edep > 0 (histogram): {statistics['fraction_with_edep']*100:.2f}%
+  - Mean Edep (given Edep > 0) from histogram: {statistics['mean_edep_given_positive']:.1f} eV
+  - P(≥1 SE | Edep > 0) [theoretical from histogram]: {statistics['fraction_SE_given_edep']*100:.1f}%
+  - Expected fraction with SEE (all bins): Σ (n_i/N)*P(≥1 SE|E_i) = {statistics['expected_fraction_with_SEE']*100:.2f}%
+  - Actual fraction with SEE (MC): {statistics['fraction_with_SE']*100:.2f}%
+  - Expected and actual are directly comparable (same population, same definition). Small differences are MC sampling noise. See doc/MUON_SEY_MONTE_CARLO.md.
+  - For one ionization (Edep~ε=27 eV): P(≥1 SE)≈1-exp(-P_esc)≈32%.
 """
     
     print(summary_text)
@@ -389,9 +481,57 @@ Results:
     return total_SE, per_event_SE, statistics, output_file_path
 
 
-def create_plot(sey_hist, statistics, input_file_path):
+def create_edep_debug_plot(sampled_edep_list, output_path):
     """
-    Create and save plot of SEY distribution.
+    Create a debug plot of MC-sampled energy deposition values with fine binning near 0.
+    
+    Parameters:
+    -----------
+    sampled_edep_list : list of float
+        All Edep values sampled by the MC (GetRandom() from EdepPrimary).
+    output_path : str
+        Path for the output PDF (e.g. plots/.../file_Edep_debug.pdf).
+    """
+    if not sampled_edep_list:
+        return
+    # Fine binning: 0.5 eV from 0 to 250 eV (500 bins) to see behavior near 0.
+    # Underflow captures values <= 0; overflow captures > 250 eV.
+    nbins = 500
+    xmin = 0.0
+    xmax = 250.0  # eV
+    edep_debug_hist = TH1D("Edep_MC_debug", "MC-sampled energy deposition (from EdepPrimary);Edep [eV];Events",
+                            nbins, xmin, xmax)
+    edep_debug_hist.SetDirectory(0)
+    edep_debug_hist.SetFillColor(ROOT.kAzure + 2)
+    edep_debug_hist.SetLineColor(ROOT.kAzure + 2)
+    edep_debug_hist.SetLineWidth(1)
+    for edep in sampled_edep_list:
+        edep_debug_hist.Fill(edep)
+    # Create canvas and draw
+    c_debug = TCanvas("EdepDebug", "Edep debug", 900, 600)
+    c_debug.SetGrid(1, 1)
+    gStyle.SetOptStat(1110)  # entries, mean, RMS
+    edep_debug_hist.Draw("HIST")
+    # Add text: underflow/overflow if any
+    n_under = edep_debug_hist.GetBinContent(0)
+    n_over = edep_debug_hist.GetBinContent(nbins + 1)
+    n_tot = len(sampled_edep_list)
+    text = TLatex()
+    text.SetNDC(True)
+    text.SetTextSize(0.03)
+    text.DrawLatex(0.15, 0.85, "Fine binning: 0.5 eV per bin (0--250 eV)")
+    if n_under > 0 or n_over > 0:
+        text.DrawLatex(0.15, 0.81, "Underflow (Edep #leq 0): %d   Overflow (>250 eV): %d" % (n_under, n_over))
+    text.DrawLatex(0.15, 0.77, "Total sampled: %d" % n_tot)
+    c_debug.SaveAs(output_path)
+    root_path = output_path.replace(".pdf", ".root")
+    c_debug.SaveAs(root_path)
+    print("Edep debug plot saved to: {} and {}".format(output_path, root_path))
+
+
+def create_plot(sey_hist, statistics, input_file_path, n_int_hist=None):
+    """
+    Create and save plot of SEY distribution (and optionally N_int distribution).
     
     Parameters:
     -----------
@@ -401,15 +541,20 @@ def create_plot(sey_hist, statistics, input_file_path):
         Statistics dictionary
     input_file_path : str
         Input file path (for output naming)
+    n_int_hist : TH1D or None
+        Optional histogram of number of ionized electrons per event (N_int = Edep/ε)
     """
     gStyle.SetOptStat(1110)  # Show mean, RMS, entries (top-right)
     gStyle.SetOptFit(0)
     
+    # Remove any fit (e.g. Poisson) attached to the histogram so it is not drawn
+    flist = sey_hist.GetListOfFunctions()
+    if flist:
+        flist.Clear()
+    
     canvas = TCanvas("SEYCanvas", "Secondary Electron Yield (Monte Carlo)", 1000, 700)
     canvas.SetGrid()
     canvas.cd()
-    
-    # Set Y-axis to logarithmic scale
     canvas.SetLogy(1)
     
     # Ensure histogram is properly styled (in case it wasn't set earlier)
@@ -470,61 +615,90 @@ def create_plot(sey_hist, statistics, input_file_path):
     plot_basename = input_basename.replace(".root", "_SEY_MonteCarlo")
     plot_file_path = os.path.join(plots_subdir, plot_basename + ".pdf")
     
-    # Save plot first (before adding text that might cause issues)
-    canvas.SaveAs(plot_file_path)
+    # Debug plot: MC-sampled Edep values (fine binning near 0)
+    if statistics.get("sampled_edep_debug"):
+        debug_basename = input_basename.replace(".root", "_Edep_debug")
+        debug_plot_path = os.path.join(plots_subdir, debug_basename + ".pdf")
+        create_edep_debug_plot(statistics["sampled_edep_debug"], debug_plot_path)
+    
+    # Save plot (with text added below); multi-page if n_int_hist provided
     print("\nPlot saved to: {}".format(plot_file_path))
     
     # Try to add text, but don't fail if it doesn't work
     try:
-        text = TLatex()
-        text.SetNDC(True)
-        text.SetTextSize(0.025)
-        text.SetTextAlign(12)
-        
-        # Position text on the LEFT side to avoid overlap with:
-        # - Title (top-center, y ~ 0.95)
-        # - Stat box (top-right, x ~ 0.6-0.95, y ~ 0.7-0.95)
-        x_pos = 0.15  # Left side
-        y_pos = 0.85  # Below title area, above stat box
-        
-        # Draw text one by one with explicit string conversion
-        text.DrawLatex(float(x_pos), float(y_pos), "Monte Carlo SEY Calculation")
-        y_pos -= 0.035
-        mean_str = "Mean SEY: %.4f" % statistics['mean_SE']
-        text.DrawLatex(float(x_pos), float(y_pos), mean_str)
-        y_pos -= 0.035
-        # Expected = theoretical mean SEY = (mean_ΔE / ε) * P_esc
-        exp_str = "Expected (theoretical): %.4f" % statistics['expected_mean']
-        text.DrawLatex(float(x_pos), float(y_pos), exp_str)
-        y_pos -= 0.035
-        events_str = "Events: %d" % statistics['n_events']
-        text.DrawLatex(float(x_pos), float(y_pos), events_str)
-        y_pos -= 0.035
-        total_str = "Total SE: %d" % statistics['total_SE']
-        text.DrawLatex(float(x_pos), float(y_pos), total_str)
-        y_pos -= 0.035
-        # Fraction of events with at least one SE
-        frac_str = "Events with SE: %.2f%% (%d/%d)" % (
+        # Results: left box (same style as parameter box)
+        rbox = TPaveText(0.15, 0.48, 0.48, 0.88, "NDC")
+        rbox.SetFillColor(0)
+        rbox.SetBorderSize(1)
+        rbox.SetTextAlign(12)
+        rbox.SetTextSize(0.022)
+        rbox.AddText("Monte Carlo SEY Calculation")
+        rbox.AddText("Mean SEY: %.4f" % statistics['mean_SE'])
+        rbox.AddText("Expected (histogram): %.4f" % statistics['expected_mean'])
+        if statistics.get('expected_mean_from_sampled') is not None:
+            rbox.AddText("Expected (from sampled Edep): %.4f" % statistics['expected_mean_from_sampled'])
+        rbox.AddText("Total SE: %d" % statistics['total_SE'])
+        rbox.AddText("Events with SE (actual MC): %.2f%% (%d/%d)" % (
             statistics['fraction_with_SE'] * 100.0,
             statistics['n_events_with_SE'],
-            statistics['n_events']
-        )
-        text.DrawLatex(float(x_pos), float(y_pos), frac_str)
-        y_pos -= 0.035
-        # P_esc = escape probability at production depth z
-        # P_esc = B * exp(-alpha * z)
-        pesc_str = "P_{esc}(z) = %.4f" % P_ESC
-        text.DrawLatex(float(x_pos), float(y_pos), pesc_str)
-        y_pos -= 0.035
-        depth_str = "Production depth: z = %.1f nm" % (Z_DEPTH/10)
-        text.DrawLatex(float(x_pos), float(y_pos), depth_str)
+            statistics['n_events']))
+        if 'fraction_with_edep' in statistics and 'fraction_SE_given_edep' in statistics and 'expected_fraction_with_SEE' in statistics:
+            rbox.AddText("Edep>0: %.2f%%,  P(#geq 1 SE | Edep>0): %.1f%% (theor.)" % (
+                statistics['fraction_with_edep'] * 100.0,
+                statistics['fraction_SE_given_edep'] * 100.0))
+            rbox.AddText("Expected (all bins #Sigma): %.2f%%" % (statistics['expected_fraction_with_SEE'] * 100.0))
+        rbox.Draw()
+        
+        # Parameters: right box, moved up so it does not overlap the stat box
+        pbox = TPaveText(0.58, 0.48, 0.88, 0.68, "NDC")
+        pbox.SetFillColor(0)
+        pbox.SetBorderSize(1)
+        pbox.SetTextAlign(12)
+        pbox.SetTextSize(0.022)
+        pbox.AddText("Parameters:")
+        pbox.AddText("P_{esc}(z) = %.4f" % P_ESC)
+        pbox.AddText("Production depth: z = %.1f nm" % (Z_DEPTH/10))
+        pbox.AddText("Events: %d" % statistics['n_events'])
+        pbox.Draw()
         
         canvas.Update()
-        # Save again with text
-        canvas.SaveAs(plot_file_path)
+        # PDF: single page (SaveAs) or multi-page (Print): page 1 = SEY, page 2 = N_int
+        if n_int_hist and n_int_hist.GetEntries() > 0:
+            canvas.Print(plot_file_path + "(")
+            c2 = TCanvas("cNint", "Number of ionized electrons per event", 1000, 700)
+            c2.SetGrid()
+            c2.SetLogy(1)
+            c2.SetLeftMargin(0.12)
+            n_int_hist.GetYaxis().SetTitleOffset(1.2)
+            n_int_hist.Draw("HIST")
+            rbox2 = TPaveText(0.15, 0.75, 0.48, 0.88, "NDC")
+            rbox2.SetFillColor(0)
+            rbox2.SetBorderSize(1)
+            rbox2.SetTextAlign(12)
+            rbox2.SetTextSize(0.022)
+            rbox2.AddText("N_{int} = #DeltaE / #varepsilon  (#varepsilon = %.0f eV)" % EPSILON)
+            rbox2.Draw()
+            pbox2 = TPaveText(0.58, 0.48, 0.88, 0.68, "NDC")
+            pbox2.SetFillColor(0)
+            pbox2.SetBorderSize(1)
+            pbox2.SetTextAlign(12)
+            pbox2.SetTextSize(0.022)
+            pbox2.AddText("Parameters:")
+            pbox2.AddText("P_{esc}(z) = %.4f" % P_ESC)
+            pbox2.AddText("Production depth: z = %.1f nm" % (Z_DEPTH/10))
+            pbox2.AddText("Events: %d" % statistics['n_events'])
+            pbox2.Draw()
+            c2.Update()
+            c2.Print(plot_file_path + ")")
+        else:
+            canvas.SaveAs(plot_file_path)
     except Exception as e:
         print("Note: Text annotations skipped (histogram saved successfully)")
-        # PDF is already saved, so we're good
+        # PDF may be partial; try to close if multi-page was started
+        try:
+            canvas.Print(plot_file_path + ")")
+        except Exception:
+            pass
     
     # Also save as ROOT file in plots folder
     root_plot_path = os.path.join(plots_subdir, plot_basename + "_plot.root")

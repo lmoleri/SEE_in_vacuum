@@ -25,40 +25,30 @@ $$P_{\rm esc}(2.5~\text{nm}) = 0.46 \times e^{-0.0075 \times 25} = 0.46 \times e
 
 ### Expected (Theoretical Mean SEY)
 
-**Expected** is the theoretical expected value of the mean secondary electron yield per event, calculated from the average energy deposition.
+The plot may show two expected values:
 
-**Formula:**
+- **Expected (histogram)**: $\langle \Delta E \rangle_{\rm hist}/\epsilon \times P_{\rm esc}$, where $\langle \Delta E \rangle_{\rm hist}$ is the histogram's GetMean(). This is the theoretical mean SEY from the histogram distribution.
+- **Expected (from sampled Edep)**: Mean of $\mu$ over the actual MC-sampled $\Delta E$ values. **This must match Mean SEY** up to Poisson statistics; the script uses ROOT's Poisson so they agree in expectation.
+
+**Formula (both):**
 $$\text{Expected} = \frac{\langle \Delta E \rangle}{\epsilon} \times P_{\rm esc}$$
 
-Where:
-- $\langle \Delta E \rangle$: Mean energy deposition per event (from Geant4 histogram)
-- $\epsilon = 27$ eV: Average energy required to produce one free electron
-- $P_{\rm esc}$: Escape probability at production depth
-
 **Physical meaning:**
-- This is the **theoretical prediction** of the mean SEY, assuming:
-  - All events have the mean energy deposition
-  - All free electrons are produced at the same depth (2.5 nm)
-  - Escape probability is constant
-- **Mean SEY** (from Monte Carlo) is the **actual simulated result** with:
-  - Variable energy deposition per event
-  - Poisson statistics for secondary electron emission
-  - Random sampling from the distribution
+- **Mean SEY** (from Monte Carlo) is the average number of secondary electrons per event.
+- **Expected (from sampled Edep)** uses the same population as the MC (the sampled $\Delta E$ values), so Mean SEY and this Expected should be close; small differences are Poisson fluctuations.
+- **Expected (histogram)** uses the histogram's mean; it can differ slightly from Mean SEY if GetRandom() sampling and GetMean() differ (e.g. binning).
 
 **Comparison:**
-- **Expected**: Theoretical value (deterministic calculation)
 - **Mean SEY**: Monte Carlo result (includes statistical fluctuations)
-
-If the Monte Carlo is working correctly, the **Mean SEY** should be close to the **Expected** value, with some statistical variation due to:
-- Poisson fluctuations in secondary electron emission
-- Distribution of energy depositions (not all events have the mean value)
-- Finite number of events
+- **Expected (from sampled Edep)**: Must match Mean SEY (validates correct Poisson sampling and $P_{\rm esc}$ application)
+- **Expected (histogram)**: Theoretical from histogram; close to Mean SEY when sampling matches the histogram
 
 ### Example Interpretation
 
 For a typical muon simulation:
-- **Mean SEY: 0.0314**: Average number of secondary electrons per event (from Monte Carlo)
-- **Expected: 0.0323**: Theoretical prediction based on mean energy deposition
+- **Mean SEY: 0.0363**: Average number of secondary electrons per event (from Monte Carlo)
+- **Expected (from sampled Edep): 0.0358**: Must match Mean SEY; close agreement validates the implementation
+- **Expected (histogram): 0.0367**: From histogram GetMean()
 - **P_esc = 0.3814**: 38.14% of free electrons escape from 2.5 nm depth
 
-The close agreement between Mean SEY and Expected validates the Monte Carlo implementation.
+The close agreement between Mean SEY and Expected (from sampled Edep) validates the Monte Carlo implementation.

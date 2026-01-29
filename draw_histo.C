@@ -565,6 +565,14 @@ void draw_histo(const char* fileName = "SEE_in_vacuum.root") {
         info2.DrawLatex(0.45, 0.79, "Sample thickness: n/a");
     }
     info2.DrawLatex(0.45, 0.73, Form("EM model: %s", modelText.c_str()));
+    double integralSteps = hSteps->Integral();
+    int binZero = hSteps->GetXaxis()->FindBin(0.);
+    if (binZero < 1) binZero = 1;
+    if (binZero > hSteps->GetNbinsX()) binZero = hSteps->GetNbinsX();
+    double fracNonZero = (integralSteps > 0.)
+        ? (1. - hSteps->GetBinContent(binZero) / integralSteps) * 100.
+        : 0.;
+    info2.DrawLatex(0.45, 0.67, Form("Fraction with #geq 1 step: %.2f%%", fracNonZero));
 
     c2->Update();
     c2->Draw();

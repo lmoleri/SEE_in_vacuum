@@ -64,6 +64,10 @@ The script generates several output files:
 
 3. **`*_SEY_MonteCarlo_plot.root`**: ROOT file with the canvas (for further editing)
 
+4. **`*_Edep_debug.pdf`** and **`*_Edep_debug.root`** (when using histogram sampling): Debug plot of MC-sampled energy deposition values from EdepPrimary, with fine binning (0.5 eV) from 0 to 250 eV to check behavior near zero. One entry per sampled event.
+
+5. **N_int histogram** (in the PDF and ROOT output): Distribution of $N_{\rm int} = \Delta E/\epsilon$ per event. Filled **once per event** when using histogram sampling (Entries = number of events with Edep > 0), so it matches the MC run.
+
 ## Example Results
 
 For a 4 GeV muon simulation with 10,000 events:
@@ -78,10 +82,11 @@ Physical Parameters:
 
 Results:
   Total events processed: 10000
-  Total secondary electrons: 805
-  Mean SEY per event: 0.0805
-  Expected mean (theoretical): 0.0323
-  Standard deviation: 0.7121
+  Total secondary electrons: ~360 (depends on seed)
+  Mean SEY per event: ~0.036
+  Expected mean (histogram): ~0.037
+  Expected mean from sampled Edep: ~0.036  (must match Mean SEY)
+  Standard deviation: ~0.45
   Median SEY: 0.0
   Min SEY: 0
   Max SEY: 21
@@ -94,16 +99,26 @@ Results:
 
 ### Mean SEY vs Expected Mean
 
-The **Mean SEY** is the average number of secondary electrons per event from the Monte Carlo simulation. The **Expected mean (theoretical)** is calculated as:
+The **Mean SEY** is the average number of secondary electrons per event from the Monte Carlo simulation. The script reports two expected values:
 
-$$\text{Expected mean} = \frac{\langle \Delta E \rangle}{\epsilon} \times P_{\text{esc}}$$
+- **Expected (histogram)**: $\langle \Delta E \rangle_{\rm hist}/\epsilon \times P_{\text{esc}}$, where $\langle \Delta E \rangle_{\rm hist}$ is the histogram's GetMean().
+- **Expected (from sampled Edep)**: Mean of $\mu$ over the actual sampled $\Delta E$ values, i.e. the same population as the MC. **This must match Mean SEY** up to Poisson statistics; the script checks this and warns if they differ.
 
-where $\langle \Delta E \rangle$ is the mean energy deposition from the histogram.
-
-**Note**: The Monte Carlo mean may differ from the expected mean due to:
+Poisson sampling uses **ROOT's TRandom::Poisson($\mu$)** so that Mean SEY equals Expected (from sampled Edep) in expectation. Small differences are due to:
 - Poisson statistics (variance = mean)
-- Sampling method (histogram sampling vs bin-by-bin)
 - Finite number of events
+
+### Decomposition: fraction with SEE and P(≥1 SE | Edep > 0)
+
+The script reports a **decomposition** that relates the fraction of events with at least one SEE to the energy-deposition histogram:
+
+- **Fraction of events with Edep > 0**: fraction of events that deposit energy above the histogram’s “zero bin” (events in the zero bin are excluded).
+- **Mean Edep (given Edep > 0)**: average energy deposition among those events.
+- **P(≥1 SE | Edep > 0) [theoretical from histogram]**: probability of at least one secondary electron, *averaged* over the “Edep > 0” part of the histogram (weighted by bin content). See [MUON_SEY_MONTE_CARLO.md](MUON_SEY_MONTE_CARLO.md) for the full formula and derivation.
+- **Expected fraction with SEE** (from histogram) = \(\sum_i (n_i/N)\,\Pr(N_{\rm SE} \ge 1 \mid E_i)\) over *all* bins. This is directly comparable to the actual MC fraction (same population and definition).
+- **Actual fraction with SEE** (from the Monte Carlo) is the fraction of events for which the sampled \(N_{\rm SE} \ge 1\). Expected and actual should agree within MC sampling noise; the script reports both.
+
+For a single ionization (Edep ≈ ε = 27 eV), P(≥1 SE) ≈ 32%. The theoretical P(≥1 SE | Edep > 0) (e.g. ~53%) is higher because it averages over the full Edep > 0 distribution, which has a tail to higher depositions.
 
 ### Interpreting the Distribution
 
@@ -130,9 +145,10 @@ python calculate_muon_sey.py input.root --epsilon 25
 
 The script includes built-in validation:
 
-1. **Consistency check**: Compares Monte Carlo mean with theoretical expected mean
-2. **Poisson statistics**: The distribution should follow Poisson behavior
-3. **Energy scaling**: SEY should scale with energy deposition
+1. **Consistency check**: Mean SEY (MC) must match **Expected (from sampled Edep)** up to Poisson statistics; the script warns if they differ by more than 10%. Poisson sampling uses ROOT's TRandom::Poisson so this holds in expectation.
+2. **Expected vs actual fraction with SEE**: Expected fraction (sum over all bins) and actual MC fraction with at least one SE should agree within MC noise.
+3. **Poisson statistics**: The distribution of $N_{\rm SE}$ should follow Poisson behavior.
+4. **Energy scaling**: SEY should scale with energy deposition.
 
 ## Troubleshooting
 
