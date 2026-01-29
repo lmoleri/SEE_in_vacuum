@@ -1,0 +1,10 @@
+{
+  "sample_thickness_nm": [5],
+  "primary_energy_MeV": [4000],
+  "em_model": "PAI",
+  "primary_particle": "mu-",
+  "pai_enabled": true,
+  "livermore_atomic_deexcitation": true,
+  "events": 100000,
+  "output_dir": "results/scan_thick5nm_particlemu-_energy4GeV_events100000_modelPAI"
+}

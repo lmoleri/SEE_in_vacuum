@@ -1,7 +1,7 @@
 # GEANT4 SEE in Vacuum Simulation
 
 This GEANT4 simulation models a primary particle gun (electron or muon) shooting at an Al2O3
-(aluminum oxide) layer.
+(aluminum oxide) layer. Further documentation (Monte Carlo model, usage, plot explanations) is in the **`doc/`** folder.
 
 ## Geometry
 
@@ -58,13 +58,13 @@ Runs a single simulation using a Geant4 macro file.
 
 ### 3. Parametric Scan (JSON)
 
-Create a JSON file with arrays of thickness and energy values, then pass it to the executable:
+Configuration files live in `config/`: **Geant4 parametric scans** use `config/geant4/*.json`; **toy model** scripts use `config/toy_model/*.json`. Create or edit a JSON file there with arrays of thickness and energy values, then pass it to the executable:
 
 ```bash
-./SEE_in_vacuum ../scan.json
+./SEE_in_vacuum ../config/geant4/scan.json
 ```
 
-Example `scan.json`:
+Example `config/geant4/scan.json`:
 ```json
 {
   "sample_thickness_nm": [10, 20, 50],
@@ -167,6 +167,7 @@ For muon simulations, a custom Monte Carlo method can be applied to calculate se
 **Usage:**
 ```bash
 conda run -n geant4 python calculate_muon_sey.py <input_root_file> [options]
+conda run -n geant4 python calculate_muon_sey.py --config config/toy_model/toy_model_config.json [options]
 ```
 
 **Example:**
@@ -174,16 +175,18 @@ conda run -n geant4 python calculate_muon_sey.py <input_root_file> [options]
 conda run -n geant4 python calculate_muon_sey.py \
   results/scan_thick5nm_particlemu-_energy4GeV_events10000_modelPAI/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root \
   --bin-by-bin
+conda run -n geant4 python calculate_muon_sey.py --config config/toy_model/toy_model_config.json --bin-by-bin
 ```
 
 **Options:**
-- `--histogram, -H`: Histogram name (default: `EdepPrimary`)
-- `--seed, -s`: Random seed (default: 42)
-- `--epsilon, -e`: Energy per free electron in eV (default: 27.0)
-- `--B`: Surface escape probability (default: 0.46)
-- `--alpha, -a`: Attenuation coefficient in Å⁻¹ (default: 0.0075)
-- `--depth, -d`: Production depth in Å (default: 25.0 = 2.5 nm)
-- `--bin-by-bin`: Process histogram bin-by-bin instead of sampling
+- `--config, -c`: Path to toy model config JSON (provides input file as `edep_root_file` or `input_file`, plus histogram, seed, epsilon, B, alpha, depth, bin_by_bin). CLI overrides config.
+- `--histogram, -H`: Histogram name (default: `EdepPrimary` or from config)
+- `--seed, -s`: Random seed (default: 42 or from config)
+- `--epsilon, -e`: Energy per free electron in eV (default: 27.0 or from config)
+- `--B`: Surface escape probability (default: 0.46 or from config)
+- `--alpha, -a`: Attenuation coefficient in Å⁻¹ (default: 0.0075 or from config)
+- `--depth, -d`: Production depth in Å (default: 25.0 = 2.5 nm, or from config)
+- `--bin-by-bin`: Process histogram bin-by-bin instead of sampling (overrides config if set)
 
 **Output:**
 - ROOT file: `*_SEY_MonteCarlo.root` (contains SEY histogram and statistics)
@@ -201,13 +204,27 @@ The Monte Carlo method implements:
 - Poisson sampling for secondary electron emission per event
 - Total SEY calculation across all events
 
-See `MUON_SEY_MONTE_CARLO.md` for detailed documentation of the physical model and implementation.
+See [doc/MUON_SEY_MONTE_CARLO.md](doc/MUON_SEY_MONTE_CARLO.md) for detailed documentation of the physical model and implementation.
 
 **Workflow:**
 1. Run Geant4 muon simulation (e.g., with PAI model)
 2. Extract energy deposition histogram (`EdepPrimary`)
 3. Apply Monte Carlo post-processing to calculate SEY
 4. Compare results with experimental data or other models
+
+**5. Toy events (many crossings per event)**
+
+For studies where one "event" has many primary crossings of the shell: energy depositions are sampled from an EdepPrimary histogram (e.g. from a 100k Geant4 run), and SEE per crossing is drawn from Poisson(μ(ΔE)). Total SE per event is the sum over crossings. All parameters are set via a JSON config file.
+
+**Config file:** `config/toy_model/toy_model_config.json` (or path passed as first argument). Keys: `edep_root_file`, `histogram`, `n_events`, `crossings_per_event` (single value or list for scan), `seed`, `epsilon`, `B`, `alpha`, `depth`, `output_dir`.
+
+**Run:**
+```bash
+conda run -n geant4 python run_toy_events.py
+```
+(Defaults to `config/toy_model/toy_model_config.json`; or pass a path, e.g. `config/toy_model/toy_model_config.json`.)
+
+**Example:** 4 GeV muons, 100 and 200 crossings per event, 10k events — config uses `edep_root_file` pointing to the 100k-event ROOT file and `crossings_per_event: [100, 200]`. Output: `results/toy_events_4GeV_muons/toy_events_SE_per_event.root` (histograms of total SE per event per crossings value), `toy_events_summary.txt`, and PDFs in `plots/toy_events_4GeV_muons/`.
 
 Notes:
 - The energy deposition plot uses log Y scale by default.
@@ -221,7 +238,7 @@ Notes:
 |--------|----------|-------|--------|
 | **Interactive** | Exploration, debugging | None (GUI) | Single ROOT file |
 | **Batch (Macro)** | Single simulation run | `.mac` file | Single ROOT file |
-| **Parametric Scan** | Systematic studies | `.json` file | Multiple ROOT files |
+| **Parametric Scan** | Systematic studies | `config/geant4/*.json` | Multiple ROOT files |
 | **Monte Carlo Post-Processing** | Muon SEY calculation | ROOT file from scan | SEY plots and statistics |
 
 ## Customization
@@ -235,7 +252,7 @@ You can also modify the Al2O3 geometry in `src/DetectorConstruction.cc`:
 - Thickness: Change the `thickness` variable (or use JSON config)
 - Diameter: Change the `radius` variable
 
-For parametric scans, all parameters are configurable via JSON (see example above).
+For parametric scans, all parameters are configurable via JSON in `config/geant4/` (see example above).
 
 ## Example Macro File (run.mac)
 
@@ -257,5 +274,6 @@ Create a `run.mac` file to run simulations:
 
 ## Additional Documentation
 
-- **`MUON_SEY_MONTE_CARLO.md`**: Detailed documentation of the Monte Carlo physical model and implementation for muon secondary electron emission
-- **`MUON_SEY_USAGE.md`**: Usage guide for the Monte Carlo SEY calculation script with examples and troubleshooting
+- **`doc/MUON_SEY_MONTE_CARLO.md`**: Detailed documentation of the Monte Carlo physical model and implementation for muon secondary electron emission
+- **`doc/MUON_SEY_USAGE.md`**: Usage guide for the Monte Carlo SEY calculation script with examples and troubleshooting
+- **`doc/PLOT_LEGEND_EXPLANATION.md`**: Explanation of P_esc and Expected values on the SEY plot

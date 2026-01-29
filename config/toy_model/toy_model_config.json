@@ -1,0 +1,13 @@
+{
+  "edep_root_file": "results/scan_thick5nm_particlemu-_energy4GeV_events100000_modelPAI/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events100000.root",
+  "histogram": "EdepPrimary",
+  "n_events": 10000,
+  "crossings_per_event": [100, 200],
+  "seed": 42,
+  "epsilon": 27.0,
+  "B": 0.46,
+  "alpha": 0.0075,
+  "depth": 25.0,
+  "bin_by_bin": false,
+  "output_dir": "results/toy_events_4GeV_muons"
+}

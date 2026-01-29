@@ -15,6 +15,8 @@ Example:
 
 import sys
 import argparse
+import json
+import os
 import numpy as np
 from math import exp, factorial
 import ROOT
@@ -302,16 +304,14 @@ def process_histogram_from_file(root_file_path, hist_name="EdepPrimary", seed=42
     total_SE, per_event_SE, statistics = calculate_sey_monte_carlo(
         edep_hist, random_gen, use_histogram_sampling)
     
-    # Create output histograms
+    # Create output histograms: exactly one bin per integer (0, 1, 2, ...)
     max_SE = max(per_event_SE) if per_event_SE else 0
-    # Use reasonable binning: if max is small, use more bins for better resolution
-    if max_SE < 50:
-        n_bins = max(50, int(max_SE) + 1)
-    else:
-        n_bins = max(50, max_SE + 10)
+    n_bins = int(max_SE) + 1  # bins for 0, 1, 2, ..., max_SE
+    xmin = -0.5
+    xmax = max_SE + 0.5
     
     sey_hist = TH1D("SEY_MonteCarlo", "Secondary Electron Yield (Monte Carlo)", 
-                    n_bins, -0.5, max_SE + 0.5)
+                    n_bins, xmin, xmax)
     sey_hist.SetXTitle("Number of Secondary Electrons per Event")
     sey_hist.SetYTitle("Number of Events")
     sey_hist.SetFillColor(9)  # kBlue = 9
@@ -532,6 +532,24 @@ def create_plot(sey_hist, statistics, input_file_path):
     print("Plot (ROOT) saved to: {}".format(root_plot_path))
 
 
+def load_toy_config(config_path):
+    """Load toy model config (JSON). Returns dict with keys used by calculate_muon_sey."""
+    with open(config_path, "r") as f:
+        cfg = json.load(f)
+    # Input file: edep_root_file (run_toy_events) or input_file
+    raw_input = cfg.get("edep_root_file") or cfg.get("input_file")
+    return {
+        "input_file": raw_input,
+        "histogram": cfg.get("histogram", "EdepPrimary"),
+        "seed": int(cfg.get("seed", 42)),
+        "epsilon": float(cfg.get("epsilon", EPSILON)),
+        "B": float(cfg.get("B", B)),
+        "alpha": float(cfg.get("alpha", ALPHA)),
+        "depth": float(cfg.get("depth", Z_DEPTH)),
+        "bin_by_bin": bool(cfg.get("bin_by_bin", False)),
+    }
+
+
 def main():
     """Main function."""
     # Declare globals at the start to avoid syntax errors
@@ -549,47 +567,82 @@ def main():
         epilog="""
 Example:
   python calculate_muon_sey.py results/scan_mu4GeV/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root
-  
+  python calculate_muon_sey.py --config config/toy_model/toy_model_config.json
   python calculate_muon_sey.py input.root --histogram EdepPrimary --seed 12345
         """
     )
     
-    parser.add_argument("input_file", 
-                       help="Input ROOT file from Geant4 simulation")
+    parser.add_argument("input_file", nargs="?", default=None,
+                       help="Input ROOT file from Geant4 simulation (optional if --config is used)")
+    parser.add_argument("--config", "-c", default=None,
+                       help="Path to toy model config JSON (provides input_file, histogram, seed, epsilon, B, alpha, depth, bin_by_bin)")
     parser.add_argument("--histogram", "-H",
-                       default="EdepPrimary",
-                       help="Name of energy deposition histogram (default: EdepPrimary)")
+                       default=None,
+                       help="Name of energy deposition histogram (default: EdepPrimary or from config)")
     parser.add_argument("--seed", "-s",
                        type=int,
-                       default=42,
-                       help="Random number generator seed (default: 42)")
+                       default=None,
+                       help="Random number generator seed (default: 42 or from config)")
     parser.add_argument("--epsilon", "-e",
                        type=float,
                        default=None,
-                       help=f"Energy per free electron in eV (default: {epsilon_default})")
+                       help=f"Energy per free electron in eV (default: {epsilon_default} or from config)")
     parser.add_argument("--B", 
                        type=float,
                        default=None,
-                       help=f"Surface escape probability (default: {B_default})")
+                       help=f"Surface escape probability (default: {B_default} or from config)")
     parser.add_argument("--alpha", "-a",
                        type=float,
                        default=None,
-                       help=f"Attenuation coefficient in Å^-1 (default: {alpha_default})")
+                       help=f"Attenuation coefficient in Å^-1 (default: {alpha_default} or from config)")
     parser.add_argument("--depth", "-d",
                        type=float,
                        default=None,
-                       help=f"Production depth in Å (default: {depth_default}, i.e., {depth_default/10} nm)")
+                       help=f"Production depth in Å (default: {depth_default}, i.e., {depth_default/10} nm, or from config)")
     parser.add_argument("--bin-by-bin",
                        action="store_true",
-                       help="Process histogram bin-by-bin instead of sampling (default: sampling)")
+                       help="Process histogram bin-by-bin instead of sampling (overrides config if set)")
     
     args = parser.parse_args()
     
-    # Update constants if provided via command line
-    epsilon_val = args.epsilon if args.epsilon is not None else EPSILON
-    B_val = args.B if args.B is not None else B
-    alpha_val = args.alpha if args.alpha is not None else ALPHA
-    depth_val = args.depth if args.depth is not None else Z_DEPTH
+    # Load config if provided
+    cfg = None
+    config_path = args.config
+    if config_path:
+        if not os.path.isfile(config_path) and not os.path.dirname(config_path):
+            for alt in (os.path.join("config", "toy_model", config_path), os.path.join("config", config_path)):
+                if os.path.isfile(alt):
+                    config_path = alt
+                    break
+        if not os.path.isfile(config_path):
+            print("Error: Config file not found: {}".format(args.config))
+            sys.exit(1)
+        args.config = config_path
+        cfg = load_toy_config(config_path)
+    
+    # Resolve input file: CLI > config
+    input_file = args.input_file
+    if input_file is None and cfg is not None:
+        input_file = cfg.get("input_file")
+    if not input_file:
+        print("Error: No input ROOT file. Provide input_file as positional argument or in --config (edep_root_file / input_file).")
+        sys.exit(1)
+    # If path is relative and we have a config file, resolve relative to project root (config may be in config/toy_model/ or config/geant4/)
+    if not os.path.isabs(input_file) and args.config and os.path.isfile(args.config):
+        base = os.path.dirname(os.path.abspath(args.config))
+        while base and os.path.basename(base) in ("toy_model", "geant4", "config"):
+            base = os.path.dirname(base)
+        input_file = os.path.normpath(os.path.join(base, input_file))
+    
+    # Resolve other options: CLI overrides config, config overrides defaults
+    histogram = args.histogram if args.histogram is not None else (cfg.get("histogram") if cfg else "EdepPrimary")
+    seed = args.seed if args.seed is not None else (cfg.get("seed") if cfg else 42)
+    epsilon_val = args.epsilon if args.epsilon is not None else (cfg.get("epsilon") if cfg else EPSILON)
+    B_val = args.B if args.B is not None else (cfg.get("B") if cfg else B)
+    alpha_val = args.alpha if args.alpha is not None else (cfg.get("alpha") if cfg else ALPHA)
+    depth_val = args.depth if args.depth is not None else (cfg.get("depth") if cfg else Z_DEPTH)
+    bin_by_bin = args.bin_by_bin or (cfg.get("bin_by_bin") if cfg else False)
+    
     p_esc_val = B_val * exp(-alpha_val * depth_val)
     
     # Update module-level constants for use in functions
@@ -602,12 +655,14 @@ Example:
     print("=" * 70)
     print("Monte Carlo SEY Calculation for Muon Interactions")
     print("=" * 70)
+    if args.config:
+        print("Config file: {}".format(args.config))
     print()
     
     # Process file
-    use_sampling = not args.bin_by_bin
+    use_sampling = not bin_by_bin
     result = process_histogram_from_file(
-        args.input_file, args.histogram, args.seed, use_sampling)
+        input_file, histogram, seed, use_sampling)
     
     if result[0] is not None:
         total_SE, per_event_SE, statistics, output_file = result
