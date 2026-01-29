@@ -52,3 +52,12 @@ For a typical muon simulation:
 - **P_esc = 0.3814**: 38.14% of free electrons escape from 2.5 nm depth
 
 The close agreement between Mean SEY and Expected (from sampled Edep) validates the Monte Carlo implementation.
+
+### Check: fraction with SEE
+
+The plot shows a **Check: fraction with SEE** box with two numbers:
+
+- **Expected (all bins Σ)**: Theoretical fraction of events with at least one secondary electron, computed as \(\sum_i (n_i/N)\,\Pr(N_{\rm SE} \ge 1 \mid E_i)\) over *all* histogram bins (including zero). Same population and definition as the MC.
+- **Actual (MC)**: Fraction of Monte Carlo events for which the sampled \(N_{\rm SE} \ge 1\).
+
+Expected and Actual are directly comparable and should agree within MC sampling noise. See [MUON_SEY_MONTE_CARLO.md](MUON_SEY_MONTE_CARLO.md) for the formula and derivation.

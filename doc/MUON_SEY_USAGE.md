@@ -15,8 +15,10 @@ conda run -n geant4 python calculate_muon_sey.py \
 
 ```bash
 python calculate_muon_sey.py <input_file> [options]
+python calculate_muon_sey.py --config config/toy_model/toy_model_config.json [options]
 
 Options:
+  --config, -c CONFIG          Path to JSON config (provides input file, histogram, seed, epsilon, B, alpha, depth, bin_by_bin). CLI overrides config.
   --histogram, -H HISTOGRAM    Histogram name (default: EdepPrimary)
   --seed, -s SEED              Random seed (default: 42)
   --epsilon, -e EPSILON        Energy per free electron in eV (default: 27.0)
@@ -59,7 +61,9 @@ The script generates several output files:
 
 2. **`*_SEY_MonteCarlo.pdf`**: PDF plot showing:
    - SEY distribution histogram
-   - Statistics (mean, std, expected value)
+   - **Results**: Mean SEY, Expected (histogram), Expected (from sampled Edep)
+   - **Check: Mean SEY = Expected**: Validates that Poisson sampling and P_esc are correct (Mean SEY ≈ Expected from sampled Edep)
+   - **Check: fraction with SEE**: Expected (all bins Σ) vs Actual (MC); directly comparable, should agree within MC noise
    - Physical parameters used
 
 3. **`*_SEY_MonteCarlo_plot.root`**: ROOT file with the canvas (for further editing)
@@ -178,6 +182,17 @@ conda run -n geant4 root -l input.root
 2. **Run Monte Carlo calculation** → Generate SEY distribution
 3. **Compare with other models** → Use different physics models (PAI, Livermore, Penelope)
 4. **Parameter studies** → Vary physical parameters to match experimental data
+
+## Related: Toy model (multiple crossings per event)
+
+For studies where one "event" has many shell crossings, use **`run_toy_events.py`** (see README, section "Toy events"). It samples ΔE from an EdepPrimary histogram and draws SEE per crossing from Poisson(μ(ΔE)); total SE per event is the sum over crossings.
+
+**Config:** `config/toy_model/toy_model_config.json` — keys include `crossings_per_event` (single value or list, e.g. `[100, 200]`), `n_events`, `edep_root_file`, and the same physics parameters (epsilon, B, alpha, depth).
+
+**Outputs:**
+- **Results:** `results/toy_events_*/toy_events_SE_per_event.root`, `toy_events_summary.txt`
+- **Plots:** Per crossings value: `TotalSE_per_event_{N}_crossings.pdf` and `.root` (histogram of total SE per event; each plot shows mean, std, and **efficiency** = fraction of events with ≥1 SE)
+- **Summary overlay:** `TotalSE_per_event_summary.pdf` and `.root` — all crossing counts overlaid on one canvas (when more than one crossings value is in the config)
 
 ## References
 

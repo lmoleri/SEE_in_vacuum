@@ -62,7 +62,7 @@ def run_toy_events(config_path, cli_overrides=None):
                 cfg[k] = v
 
     import ROOT
-    from ROOT import TFile, TH1D, TCanvas, TLatex, gStyle
+    from ROOT import TFile, TH1D, TCanvas, TLatex, TPaveText, gStyle
 
     ROOT.gRandom.SetSeed(cfg["seed"])
     epsilon = float(cfg["epsilon"])
@@ -135,6 +135,8 @@ def run_toy_events(config_path, cli_overrides=None):
             total_se_per_event.append(event_se)
 
         arr = np.array(total_se_per_event)
+        n_with_se = int(np.sum(arr >= 1))
+        efficiency = n_with_se / n_events if n_events > 0 else 0.0
         max_se = int(np.max(arr))
         n_bins = max_se + 1
         h = TH1D("TotalSE_per_event_n{}".format(n_crossings),
@@ -150,13 +152,16 @@ def run_toy_events(config_path, cli_overrides=None):
             "std": float(np.std(arr)),
             "min": int(np.min(arr)),
             "max": int(np.max(arr)),
+            "n_with_se": n_with_se,
+            "efficiency": efficiency,
         }
 
     summary = "n_events={} crossings_scan={} epsilon={} B={} alpha={} depth={} P_esc={}\n".format(
         n_events, crossings_scan, epsilon, B, alpha, depth, P_esc)
     for n_crossings, data in results.items():
-        summary += "crossings={} mean_SE={:.4f} std_SE={:.4f} min={} max={}\n".format(
-            n_crossings, data["mean"], data["std"], data["min"], data["max"])
+        summary += "crossings={} mean_SE={:.4f} std_SE={:.4f} min={} max={} efficiency={:.4f} (n_with_SE={})\n".format(
+            n_crossings, data["mean"], data["std"], data["min"], data["max"],
+            data["efficiency"], data["n_with_se"])
 
     # Save ROOT file with all histograms
     out_root = os.path.join(out_dir, "toy_events_SE_per_event.root")
@@ -180,7 +185,8 @@ def run_toy_events(config_path, cli_overrides=None):
         plots_dir = os.path.join("plots", os.path.basename(out_dir.rstrip(os.sep)))
     os.makedirs(plots_dir, exist_ok=True)
     gStyle.SetOptStat(110)
-    for n_crossings, data in results.items():
+    colors = [1, 2, 4, 6, 8, 9]  # kBlack, kRed, kBlue, kMagenta, kGreen+2, kBlue+1
+    for idx, (n_crossings, data) in enumerate(results.items()):
         c = TCanvas("c_{}".format(n_crossings), "Total SE per event ({} crossings)".format(n_crossings), 800, 600)
         c.SetGrid()
         c.SetLogy(1)
@@ -193,10 +199,61 @@ def run_toy_events(config_path, cli_overrides=None):
         lat.DrawLatex(0.15, 0.85, "Toy events: {} crossings per event".format(n_crossings))
         lat.DrawLatex(0.15, 0.80, "Mean total SE = {:.2f}".format(data["mean"]))
         lat.DrawLatex(0.15, 0.75, "Std = {:.2f}".format(data["std"]))
+        lat.DrawLatex(0.15, 0.70, "Efficiency (#geq 1 SE) = {:.2f}% ({}/{})".format(
+            data["efficiency"] * 100.0, data["n_with_se"], n_events))
         c.Update()
         pdf_path = os.path.join(plots_dir, "TotalSE_per_event_{}_crossings.pdf".format(n_crossings))
+        root_path = os.path.join(plots_dir, "TotalSE_per_event_{}_crossings.root".format(n_crossings))
         c.SaveAs(pdf_path)
-        print("Plot saved: {}".format(pdf_path))
+        c.SaveAs(root_path)
+        print("Plot saved: {} and {}".format(pdf_path, root_path))
+
+    # Summary plot: overlay all crossing counts on one canvas
+    if len(results) > 1:
+        # Use outline (no fill) for overlay so all visible. Set pad range from all histograms so none are clipped.
+        order = sorted(results.keys(), key=lambda n: results[n]["max"])
+        all_histos = [results[n]["histogram"] for n in order]
+        ymax_global = max(hi.GetMaximum() for hi in all_histos)
+        xmin_global = min(hi.GetXaxis().GetBinLowEdge(1) for hi in all_histos)
+        xmax_global = max(hi.GetXaxis().GetBinUpEdge(hi.GetNbinsX()) for hi in all_histos)
+        c_summary = TCanvas("c_summary", "Total SE per event (all crossings)", 800, 600)
+        c_summary.SetGrid()
+        c_summary.SetLogy(1)
+        leg_box = TPaveText(0.55, 0.65, 0.88, 0.88, "NDC")
+        leg_box.SetBorderSize(1)
+        leg_box.SetFillStyle(0)
+        leg_box.SetTextAlign(12)
+        first = True
+        for idx, n_crossings in enumerate(order):
+            data = results[n_crossings]
+            h = data["histogram"].Clone("TotalSE_per_event_n{}_clone".format(n_crossings))
+            h.SetDirectory(0)
+            col = colors[idx % len(colors)]
+            h.SetLineColor(col)
+            h.SetLineWidth(2)
+            h.SetFillStyle(0)  # no fill so overlaid histograms don't cover each other
+            h.SetMinimum(0.1)
+            h.SetMaximum(ymax_global * 1.15)  # headroom so all curves visible
+            h.GetXaxis().SetRangeUser(xmin_global, xmax_global)
+            if first:
+                h.Draw("HIST")
+                first = False
+            else:
+                h.Draw("HIST SAME")
+            leg_box.AddText("%d crossings: mean = %.2f, eff = %.2f%%" % (
+                n_crossings, data["mean"], data["efficiency"] * 100.0))
+        leg_box.Draw()
+        lat_sum = TLatex()
+        lat_sum.SetNDC(True)
+        lat_sum.SetTextSize(0.03)
+        lat_sum.DrawLatex(0.15, 0.88, "Toy events: total SE per event")
+        lat_sum.DrawLatex(0.15, 0.83, "Events: %d" % n_events)
+        c_summary.Update()
+        summary_pdf = os.path.join(plots_dir, "TotalSE_per_event_summary.pdf")
+        summary_root = os.path.join(plots_dir, "TotalSE_per_event_summary.root")
+        c_summary.SaveAs(summary_pdf)
+        c_summary.SaveAs(summary_root)
+        print("Summary plot saved: {} and {}".format(summary_pdf, summary_root))
 
     print("Results written to {}".format(out_dir))
     print("ROOT file: {}".format(out_root))

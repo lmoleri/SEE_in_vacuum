@@ -121,10 +121,10 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
 
 ## Plotting
 
-Run the ROOT macro to draw and save canvases (with annotations) into the ROOT file:
+Run the ROOT macro to draw and save canvases (with annotations) into the ROOT file. From the project root:
 
 ```bash
-root -l /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C
+root -l draw_histo.C
 ```
 
 When run on scan outputs, canvases are also exported to `plots/` as `.root` and `.pdf`,
@@ -132,26 +132,26 @@ mirroring the `results/` subfolder structure.
 
 To plot a specific file from a parametric scan:
 ```bash
-root -l '/Users/luca/Documents/software/GEANT4/SEE_in_vacuum/draw_histo.C("SEE_in_vacuum_thick20nm_energy1MeV.root")'
+root -l 'draw_histo.C("SEE_in_vacuum_thick20nm_energy1MeV.root")'
 ```
 
 To process all scan outputs at once:
 ```bash
-bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_all.sh /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
+bash scripts/run_draw_all.sh results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
 ```
 
 To create summary ROOT files with overlapping histograms and legends (one per particle):
 ```bash
-bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summary.sh /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
+bash scripts/run_draw_summary.sh results/scan_thick5-10-15-20-25nm_energy1MeV_events100000
 ```
 
 To compare models per energy (one canvas per energy value):
 ```bash
-bash /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/scripts/run_draw_summary_models.sh \
-  /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_*_modelPAI \
-  /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_*_modelLivermore \
-  /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/scan_*_modelPenelope \
-  /Users/luca/Documents/software/GEANT4/SEE_in_vacuum/results/summary_models.root
+bash scripts/run_draw_summary_models.sh \
+  results/scan_*_modelPAI \
+  results/scan_*_modelLivermore \
+  results/scan_*_modelPenelope \
+  results/summary_models.root
 ```
 
 Model comparison canvases are also exported to `plots/` alongside the summary root file.
@@ -189,9 +189,10 @@ conda run -n geant4 python calculate_muon_sey.py --config config/toy_model/toy_m
 - `--bin-by-bin`: Process histogram bin-by-bin instead of sampling (overrides config if set)
 
 **Output:**
-- ROOT file: `*_SEY_MonteCarlo.root` (contains SEY histogram and statistics)
-- PDF plot: Saved in `plots/` folder with logarithmic Y-axis
-- Statistics: Mean SEY, expected value, standard deviation, etc.
+- ROOT file: `*_SEY_MonteCarlo.root` (contains SEY histogram, N_int histogram, and statistics)
+- PDF plot: Saved in `plots/` folder with logarithmic Y-axis; includes **Results** (Mean SEY, Expected values), **Check: Mean SEY = Expected** (validates Poisson sampling), and **Check: fraction with SEE** (Expected vs Actual, comparable over all events)
+- Edep debug: `*_Edep_debug.pdf` and `*_Edep_debug.root` (histogram sampling only) — MC-sampled energy deposition with fine binning near zero
+- Statistics: Mean SEY, expected (histogram and from sampled Edep), standard deviation; consistency checks that Mean SEY ≈ Expected (from sampled Edep) and expected vs actual fraction with SEE
 
 **Processing Modes:**
 - **Histogram sampling** (default): Samples energy deposition from the histogram distribution
@@ -224,7 +225,13 @@ conda run -n geant4 python run_toy_events.py
 ```
 (Defaults to `config/toy_model/toy_model_config.json`; or pass a path, e.g. `config/toy_model/toy_model_config.json`.)
 
-**Example:** 4 GeV muons, 100 and 200 crossings per event, 10k events — config uses `edep_root_file` pointing to the 100k-event ROOT file and `crossings_per_event: [100, 200]`. Output: `results/toy_events_4GeV_muons/toy_events_SE_per_event.root` (histograms of total SE per event per crossings value), `toy_events_summary.txt`, and PDFs in `plots/toy_events_4GeV_muons/`.
+**Example:** 4 GeV muons, 100 and 200 crossings per event, 10k events — config uses `edep_root_file` pointing to the 100k-event ROOT file and `crossings_per_event: [100, 200]`.
+
+**Output:**
+- **Results:** `results/toy_events_4GeV_muons/toy_events_SE_per_event.root` (histograms of total SE per event per crossings value), `toy_events_summary.txt`, `toy_model_config_used.json`.
+- **Plots (per crossings value):** `plots/toy_events_4GeV_muons/TotalSE_per_event_{N}_crossings.pdf` and `.root` — histogram of total SE per event, with mean, std, and **efficiency** (fraction of events with ≥1 SE).
+- **Summary overlay:** `TotalSE_per_event_summary.pdf` and `.root` — all crossing counts overlaid on one canvas (when `crossings_per_event` has more than one value).
+- **Text summary** includes mean, std, min, max, and efficiency per crossings value.
 
 Notes:
 - The energy deposition plot uses log Y scale by default.
@@ -239,7 +246,8 @@ Notes:
 | **Interactive** | Exploration, debugging | None (GUI) | Single ROOT file |
 | **Batch (Macro)** | Single simulation run | `.mac` file | Single ROOT file |
 | **Parametric Scan** | Systematic studies | `config/geant4/*.json` | Multiple ROOT files |
-| **Monte Carlo Post-Processing** | Muon SEY calculation | ROOT file from scan | SEY plots and statistics |
+| **Monte Carlo Post-Processing** | Muon SEY calculation | ROOT file from scan | SEY plots, N_int and Edep debug, statistics |
+| **Toy events** | Many crossings per event | `config/toy_model/*.json` | SE per event histograms, summary overlay, efficiency |
 
 ## Customization
 

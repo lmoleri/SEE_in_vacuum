@@ -208,7 +208,7 @@ So **32%** is the probability of at least one SE when the deposition is about on
 4. **Distribution histogram**: Histogram of $N_{\rm SE}$ values
 5. **N_int histogram**: Distribution of $N_{\rm int} = \Delta E/\epsilon$ per event (filled once per event when using histogram sampling; Entries = number of events with Edep > 0)
 6. **Edep debug plot** (when using histogram sampling): Fine-binned (0.5 eV) histogram of MC-sampled energy deposition values from EdepPrimary, saved as PDF and ROOT (`*_Edep_debug.pdf`, `*_Edep_debug.root`), for checking behavior near zero
-7. **Consistency**: Mean SEY (MC) ≈ Expected (from sampled Edep); expected and actual fraction with SEE agree within MC noise
+7. **Consistency**: Mean SEY (MC) ≈ Expected (from sampled Edep); expected and actual fraction with SEE agree within MC noise. The PDF plot displays **Check: Mean SEY = Expected** and **Check: fraction with SEE** boxes so these checks are visible at a glance (see [PLOT_LEGEND_EXPLANATION.md](PLOT_LEGEND_EXPLANATION.md)).
 
 ## Future Enhancements
 
