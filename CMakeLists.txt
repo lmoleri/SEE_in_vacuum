@@ -7,8 +7,9 @@ if(DEFINED ENV{CONDA_PREFIX})
     message(STATUS "Found conda environment: $ENV{CONDA_PREFIX}")
 endif()
 
-# Find Geant4 package
+# Find Geant4 and ROOT packages
 find_package(Geant4 REQUIRED)
+find_package(ROOT REQUIRED)
 
 # Include Geant4 directories
 include(${Geant4_USE_FILE})
@@ -42,5 +43,5 @@ set(HEADERS
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
-# Link Geant4 libraries
-target_link_libraries(${PROJECT_NAME} ${Geant4_LIBRARIES})
+# Link Geant4 and ROOT libraries (ROOT used in RunAction for histogram optimization)
+target_link_libraries(${PROJECT_NAME} ${Geant4_LIBRARIES} ROOT::Core ROOT::RIO ROOT::Hist)

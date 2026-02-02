@@ -34,6 +34,7 @@ public:
     G4bool IsPaiEnabled() const;
 
 private:
+    void OptimizeHistogramInFile(const G4String& fileName);
     G4int fNPrimaryElectrons;
     G4int fNSecondaryElectrons;
     G4double fMinNonZeroEdep;

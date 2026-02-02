@@ -62,7 +62,7 @@ def run_toy_events(config_path, cli_overrides=None):
                 cfg[k] = v
 
     import ROOT
-    from ROOT import TFile, TH1D, TCanvas, TLatex, TPaveText, gStyle
+    from ROOT import TFile, TH1D, TCanvas, TLatex, TPaveText, gStyle, TGraph, TGraphErrors
 
     ROOT.gRandom.SetSeed(cfg["seed"])
     epsilon = float(cfg["epsilon"])
@@ -210,50 +210,100 @@ def run_toy_events(config_path, cli_overrides=None):
 
     # Summary plot: overlay all crossing counts on one canvas
     if len(results) > 1:
-        # Use outline (no fill) for overlay so all visible. Set pad range from all histograms so none are clipped.
+        # Use outline (no fill) for overlay so all visible. Fix frame first so ROOT does not replace it when drawing the second histogram.
         order = sorted(results.keys(), key=lambda n: results[n]["max"])
         all_histos = [results[n]["histogram"] for n in order]
         ymax_global = max(hi.GetMaximum() for hi in all_histos)
         xmin_global = min(hi.GetXaxis().GetBinLowEdge(1) for hi in all_histos)
         xmax_global = max(hi.GetXaxis().GetBinUpEdge(hi.GetNbinsX()) for hi in all_histos)
+        ymin_frame = 0.1
+        ymax_frame = ymax_global * 1.15
         c_summary = TCanvas("c_summary", "Total SE per event (all crossings)", 800, 600)
         c_summary.SetGrid()
         c_summary.SetLogy(1)
-        leg_box = TPaveText(0.55, 0.65, 0.88, 0.88, "NDC")
+        # Set frame first so both histograms are drawn into the same fixed range (avoids only second histogram visible)
+        frame_hist = c_summary.DrawFrame(xmin_global, ymin_frame, xmax_global, ymax_frame)
+        frame_hist.SetTitle("Total SE per event (%d events)" % n_events)
+        frame_hist.SetXTitle("Total secondary electrons per event")
+        frame_hist.SetYTitle("Number of events")
+        # Legend box in upper-right where histograms tail off (empty space)
+        # Ensure box and text stay within plot area (right edge of plot ~0.90 NDC)
+        leg_box = TPaveText(0.55, 0.68, 0.88, 0.82, "NDC")
         leg_box.SetBorderSize(1)
-        leg_box.SetFillStyle(0)
-        leg_box.SetTextAlign(12)
-        first = True
+        leg_box.SetFillStyle(1001)  # solid fill so legend is readable over grid
+        leg_box.SetFillColor(0)    # white background
+        leg_box.SetTextAlign(12)   # left-aligned
+        leg_box.SetTextFont(42)    # Helvetica, precision 2
+        leg_box.SetTextSize(0.028)
+        # Keep references to clones so PyROOT does not garbage-collect them before SaveAs
+        summary_histos = []
         for idx, n_crossings in enumerate(order):
             data = results[n_crossings]
             h = data["histogram"].Clone("TotalSE_per_event_n{}_clone".format(n_crossings))
             h.SetDirectory(0)
+            summary_histos.append(h)
             col = colors[idx % len(colors)]
             h.SetLineColor(col)
             h.SetLineWidth(2)
             h.SetFillStyle(0)  # no fill so overlaid histograms don't cover each other
-            h.SetMinimum(0.1)
-            h.SetMaximum(ymax_global * 1.15)  # headroom so all curves visible
-            h.GetXaxis().SetRangeUser(xmin_global, xmax_global)
-            if first:
-                h.Draw("HIST")
-                first = False
-            else:
-                h.Draw("HIST SAME")
-            leg_box.AddText("%d crossings: mean = %.2f, eff = %.2f%%" % (
+            h.Draw("HIST SAME")
+            line = leg_box.AddText("N=%d: #mu=%.1f, eff=%.1f%%" % (
                 n_crossings, data["mean"], data["efficiency"] * 100.0))
+            line.SetTextColor(col)
         leg_box.Draw()
-        lat_sum = TLatex()
-        lat_sum.SetNDC(True)
-        lat_sum.SetTextSize(0.03)
-        lat_sum.DrawLatex(0.15, 0.88, "Toy events: total SE per event")
-        lat_sum.DrawLatex(0.15, 0.83, "Events: %d" % n_events)
         c_summary.Update()
         summary_pdf = os.path.join(plots_dir, "TotalSE_per_event_summary.pdf")
         summary_root = os.path.join(plots_dir, "TotalSE_per_event_summary.root")
         c_summary.SaveAs(summary_pdf)
         c_summary.SaveAs(summary_root)
         print("Summary plot saved: {} and {}".format(summary_pdf, summary_root))
+
+        # Prepare arrays for efficiency and mean SE vs crossings plots
+        import array
+        crossings_sorted = sorted(results.keys())
+        n_points = len(crossings_sorted)
+        arr_crossings = array.array('d', [float(n) for n in crossings_sorted])
+        arr_efficiency = array.array('d', [results[n]["efficiency"] * 100.0 for n in crossings_sorted])
+        arr_mean = array.array('d', [results[n]["mean"] for n in crossings_sorted])
+        arr_std = array.array('d', [results[n]["std"] for n in crossings_sorted])
+        arr_zeros = array.array('d', [0.0] * n_points)  # no x error
+
+        # Plot 1: Efficiency vs crossings
+        c_eff = TCanvas("c_efficiency", "Efficiency vs crossings", 800, 600)
+        c_eff.SetGrid()
+        gr_eff = TGraph(n_points, arr_crossings, arr_efficiency)
+        gr_eff.SetTitle("Efficiency vs shell crossings (%d events);Number of shell crossings;Efficiency (%%)" % n_events)
+        gr_eff.SetMarkerStyle(20)
+        gr_eff.SetMarkerSize(1.2)
+        gr_eff.SetMarkerColor(4)
+        gr_eff.SetLineColor(4)
+        gr_eff.SetLineWidth(2)
+        gr_eff.GetYaxis().SetRangeUser(0, 105)
+        gr_eff.Draw("APL")
+        c_eff.Update()
+        eff_pdf = os.path.join(plots_dir, "Efficiency_vs_crossings.pdf")
+        eff_root = os.path.join(plots_dir, "Efficiency_vs_crossings.root")
+        c_eff.SaveAs(eff_pdf)
+        c_eff.SaveAs(eff_root)
+        print("Efficiency plot saved: {} and {}".format(eff_pdf, eff_root))
+
+        # Plot 2: Mean SE vs crossings with std dev as error bars
+        c_mean = TCanvas("c_mean_se", "Mean SE vs crossings", 800, 600)
+        c_mean.SetGrid()
+        gr_mean = TGraphErrors(n_points, arr_crossings, arr_mean, arr_zeros, arr_std)
+        gr_mean.SetTitle("Mean SE vs shell crossings (%d events);Number of shell crossings;Mean secondary electrons per event" % n_events)
+        gr_mean.SetMarkerStyle(20)
+        gr_mean.SetMarkerSize(1.2)
+        gr_mean.SetMarkerColor(2)
+        gr_mean.SetLineColor(2)
+        gr_mean.SetLineWidth(2)
+        gr_mean.Draw("APL")
+        c_mean.Update()
+        mean_pdf = os.path.join(plots_dir, "MeanSE_vs_crossings.pdf")
+        mean_root = os.path.join(plots_dir, "MeanSE_vs_crossings.root")
+        c_mean.SaveAs(mean_pdf)
+        c_mean.SaveAs(mean_root)
+        print("Mean SE plot saved: {} and {}".format(mean_pdf, mean_root))
 
     print("Results written to {}".format(out_dir))
     print("ROOT file: {}".format(out_root))

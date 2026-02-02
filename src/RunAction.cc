@@ -514,4 +514,3 @@ void RunAction::OptimizeHistogramInFile(const G4String& fileName)
     
     file->Close();
 }
-
