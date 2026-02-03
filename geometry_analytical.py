@@ -64,6 +64,13 @@ def crossings_per_sphere(a_nm, d_nm):
     return 1.0 + ratio**2
 
 
+def analytical_formula_lines():
+    """Compact analytical formula lines for plot annotations."""
+    return [
+        "#LTN_{cross}#GT = #frac{3 L #phi}{4 R} (1 + (#frac{a}{R})^{2})",
+    ]
+
+
 def load_config(config_path):
     """Load configuration from JSON file."""
     with open(config_path, 'r') as f:
@@ -113,7 +120,7 @@ def run_analytical_scans(config_path=None):
     
     c1 = TCanvas("c_phi", "Crossings vs phi", 800, 600)
     c1.SetGrid()
-    c1.SetRightMargin(0.30)
+    c1.SetRightMargin(0.32)
     gr_phi = TGraph(len(phi_values), 
                     array.array('d', phi_values), 
                     array.array('d', N_vs_phi))
@@ -127,14 +134,16 @@ def run_analytical_scans(config_path=None):
     lat = TLatex()
     lat.SetNDC()
     lat.SetTextSize(0.03)
-    text1 = TPaveText(0.72, 0.70, 0.97, 0.88, "NDC")
+    text1 = TPaveText(0.70, 0.64, 0.98, 0.88, "NDC")
     text1.SetFillColor(0)
     text1.SetBorderSize(1)
     text1.SetTextAlign(12)
-    text1.SetTextSize(0.03)
+    text1.SetTextSize(0.027)
     text1.AddText(f"L={L_ref} #mum")
     text1.AddText(f"a={a_ref} nm")
     text1.AddText(f"d={d_ref} nm")
+    for line in analytical_formula_lines():
+        text1.AddText(line)
     text1.Draw()
     c1.Update()
     c1.SaveAs(os.path.join(plots_dir, "crossings_vs_phi.pdf"))
@@ -147,7 +156,7 @@ def run_analytical_scans(config_path=None):
     
     c2 = TCanvas("c_d", "Crossings vs shell thickness", 800, 600)
     c2.SetGrid()
-    c2.SetRightMargin(0.30)
+    c2.SetRightMargin(0.32)
     gr_d = TGraph(len(d_values),
                   array.array('d', d_values),
                   array.array('d', N_vs_d))
@@ -158,14 +167,16 @@ def run_analytical_scans(config_path=None):
     gr_d.SetLineColor(3)
     gr_d.SetLineWidth(2)
     gr_d.Draw("APL")
-    text2 = TPaveText(0.72, 0.70, 0.97, 0.88, "NDC")
+    text2 = TPaveText(0.70, 0.64, 0.98, 0.88, "NDC")
     text2.SetFillColor(0)
     text2.SetBorderSize(1)
     text2.SetTextAlign(12)
-    text2.SetTextSize(0.03)
+    text2.SetTextSize(0.027)
     text2.AddText(f"L={L_ref} #mum")
     text2.AddText(f"a={a_ref} nm")
     text2.AddText(f"#phi={phi_ref}")
+    for line in analytical_formula_lines():
+        text2.AddText(line)
     text2.Draw()
     c2.Update()
     c2.SaveAs(os.path.join(plots_dir, "crossings_vs_shell_thickness.pdf"))
@@ -178,7 +189,7 @@ def run_analytical_scans(config_path=None):
     
     c3 = TCanvas("c_a", "Crossings vs core radius", 800, 600)
     c3.SetGrid()
-    c3.SetRightMargin(0.30)
+    c3.SetRightMargin(0.32)
     gr_a = TGraph(len(a_values),
                   array.array('d', a_values),
                   array.array('d', N_vs_a))
@@ -189,14 +200,16 @@ def run_analytical_scans(config_path=None):
     gr_a.SetLineColor(6)
     gr_a.SetLineWidth(2)
     gr_a.Draw("APL")
-    text3 = TPaveText(0.72, 0.70, 0.97, 0.88, "NDC")
+    text3 = TPaveText(0.70, 0.64, 0.98, 0.88, "NDC")
     text3.SetFillColor(0)
     text3.SetBorderSize(1)
     text3.SetTextAlign(12)
-    text3.SetTextSize(0.03)
+    text3.SetTextSize(0.027)
     text3.AddText(f"L={L_ref} #mum")
     text3.AddText(f"d={d_ref} nm")
     text3.AddText(f"#phi={phi_ref}")
+    for line in analytical_formula_lines():
+        text3.AddText(line)
     text3.Draw()
     c3.Update()
     c3.SaveAs(os.path.join(plots_dir, "crossings_vs_core_radius.pdf"))
@@ -209,7 +222,7 @@ def run_analytical_scans(config_path=None):
     
     c4 = TCanvas("c_L", "Crossings vs slab thickness", 800, 600)
     c4.SetGrid()
-    c4.SetRightMargin(0.30)
+    c4.SetRightMargin(0.32)
     gr_L = TGraph(len(L_values),
                   array.array('d', L_values),
                   array.array('d', N_vs_L))
@@ -220,14 +233,16 @@ def run_analytical_scans(config_path=None):
     gr_L.SetLineColor(7)
     gr_L.SetLineWidth(2)
     gr_L.Draw("APL")
-    text = TPaveText(0.72, 0.70, 0.97, 0.88, "NDC")
+    text = TPaveText(0.70, 0.64, 0.98, 0.88, "NDC")
     text.SetFillColor(0)
     text.SetBorderSize(1)
     text.SetTextAlign(12)
-    text.SetTextSize(0.03)
+    text.SetTextSize(0.027)
     text.AddText(f"a={a_ref} nm")
     text.AddText(f"d={d_ref} nm")
     text.AddText(f"#phi={phi_ref}")
+    for line in analytical_formula_lines():
+        text.AddText(line)
     text.Draw()
     c4.Update()
     c4.SaveAs(os.path.join(plots_dir, "crossings_vs_slab_thickness.pdf"))

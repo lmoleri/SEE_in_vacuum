@@ -41,20 +41,53 @@ def format_seconds(value):
     return f"{value / 60.0:.2f} min"
 
 
-def format_phi_values(values):
+def format_value_only_lines(values, value_fmt="{:.3f}", max_per_line=2, max_lines=3,
+                            use_range_if_long=True, include_mean=True):
     """
-    Format achieved volume filling factor values for annotations.
+    Format a list of values into multiple short lines (values only).
     """
     if not values:
-        return None
-    if len(values) <= 4:
-        return ", ".join([f"{v:.3f}" for v in values])
-    vmin = float(min(values))
-    vmax = float(max(values))
-    vmean = float(np.mean(values))
-    if abs(vmax - vmin) < 1e-4:
-        return f"{vmean:.3f}"
-    return f"{vmin:.3f}-{vmax:.3f} (mean {vmean:.3f})"
+        return []
+
+    vals = [value_fmt.format(v) for v in values]
+    max_values = max(1, max_per_line * max_lines)
+    if use_range_if_long and len(vals) > max_values:
+        vmin = float(min(values))
+        vmax = float(max(values))
+        vmean = float(np.mean(values))
+        if abs(vmax - vmin) < 1e-4:
+            return [value_fmt.format(vmean)]
+        if include_mean:
+            return [f"{value_fmt.format(vmin)}-{value_fmt.format(vmax)}",
+                    f"(mean {value_fmt.format(vmean)})"]
+        return [f"{value_fmt.format(vmin)}-{value_fmt.format(vmax)}"]
+
+    lines = []
+    for i in range(0, len(vals), max_per_line):
+        lines.append(", ".join(vals[i:i + max_per_line]))
+        if len(lines) >= max_lines:
+            break
+    return lines
+
+
+def format_value_block(prefix_lines, values, value_fmt="{:.3f}", max_per_line=2, max_lines=3,
+                       use_range_if_long=True, include_mean=True):
+    """
+    Combine prefix lines with formatted value lines.
+    """
+    lines = list(prefix_lines) if prefix_lines else []
+    lines.extend(format_value_only_lines(values, value_fmt, max_per_line, max_lines,
+                                         use_range_if_long, include_mean))
+    return lines
+
+
+def analytical_formula_lines():
+    """
+    Compact analytical formula lines for plot annotations.
+    """
+    return [
+        "#LTN_{cross}#GT = #frac{3 L #phi}{4 R} (1 + (#frac{a}{R})^{2})",
+    ]
 
 
 def select_plot_indices(n_values, mode):
@@ -429,7 +462,7 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
     )
 
 
-def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achieved,
+def plot_scan_summary(scan_name, values, mc_mean, mc_err, ana_target, ana_achieved,
                       plots_dir, annotation_lines, x_values=None):
     import ROOT
     from ROOT import TCanvas, TGraphErrors, TGraph, TLatex, TLegend, TPaveText, gStyle
@@ -457,14 +490,14 @@ def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achiev
 
     for i, x in enumerate(x_vals):
         gr_mc.SetPoint(i, float(x), float(mc_mean[i]))
-        gr_mc.SetPointError(i, 0.0, float(mc_sem[i]))
+        gr_mc.SetPointError(i, 0.0, float(mc_err[i]))
         gr_ana_target.SetPoint(i, float(x), float(ana_target[i]))
         gr_ana_ach.SetPoint(i, float(x), float(ana_achieved[i]))
 
     c = TCanvas(f"c_scan_{scan_name}", f"2D MC scan: {scan_name}", 900, 650)
     c.SetGrid()
     if scan_name in ("L_um", "phi", "d_nm", "a_nm"):
-        c.SetRightMargin(0.30)
+        c.SetRightMargin(0.32)
 
     gr_mc.SetMarkerStyle(20)
     gr_mc.SetMarkerSize(1.0)
@@ -482,26 +515,23 @@ def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achiev
     gr_ana_ach.SetLineWidth(2)
     gr_ana_ach.Draw("L SAME")
 
-    if scan_name in ("L_um", "phi"):
+    if scan_name in ("L_um", "phi", "d_nm", "a_nm"):
         # Place legend in the reserved right margin to avoid overlap.
         leg = TLegend(0.72, 0.80, 0.97, 0.92)
     else:
         leg = TLegend(0.60, 0.75, 0.88, 0.90)
     leg.SetBorderSize(0)
-    leg.AddEntry(gr_mc, "2D MC mean (SEM)", "lp")
+    leg.AddEntry(gr_mc, "2D MC mean (#sigma)", "lp")
     leg.AddEntry(gr_ana_target, "Analytical (target #phi)", "l")
     leg.AddEntry(gr_ana_ach, "Analytical (achieved #phi)", "l")
     leg.Draw()
 
     if scan_name in ("phi", "L_um", "d_nm", "a_nm"):
-        if scan_name in ("phi", "L_um"):
-            text = TPaveText(0.72, 0.52, 0.97, 0.78, "NDC")
-        else:
-            text = TPaveText(0.72, 0.55, 0.97, 0.88, "NDC")
+        text = TPaveText(0.70, 0.45, 0.98, 0.78, "NDC")
         text.SetFillColor(0)
         text.SetBorderSize(1)
         text.SetTextAlign(12)
-        text.SetTextSize(0.03)
+        text.SetTextSize(0.027)
         for line in annotation_lines:
             text.AddText(line)
         text.Draw()
@@ -552,9 +582,9 @@ def plot_crossings_distribution_2d(crossings_arr, out_base, title, annotation_li
     c.SaveAs(out_base + ".pdf")
     c.SaveAs(out_base + ".root")
 
-def plot_core_radius_mc_vs_ana(values, mc_mean, mc_sem, ana_achieved, plots_dir, annotation_lines):
+def plot_core_radius_mc_vs_ana(values, mc_mean, mc_err, ana_achieved, plots_dir, annotation_lines):
     import ROOT
-    from ROOT import TCanvas, TGraphErrors, TGraph, TLatex, TLegend, gStyle
+    from ROOT import TCanvas, TGraphErrors, TGraph, TLatex, TLegend, TPaveText, gStyle
 
     gStyle.SetOptStat(0)
     n = len(values)
@@ -565,11 +595,12 @@ def plot_core_radius_mc_vs_ana(values, mc_mean, mc_sem, ana_achieved, plots_dir,
     gr_ana = TGraph(n)
     for i, x in enumerate(values):
         gr_mc.SetPoint(i, float(x), float(mc_mean[i]))
-        gr_mc.SetPointError(i, 0.0, float(mc_sem[i]))
+        gr_mc.SetPointError(i, 0.0, float(mc_err[i]))
         gr_ana.SetPoint(i, float(x), float(ana_achieved[i]))
 
     c = TCanvas("c_core_radius_mc_vs_ana_2d", "Core radius MC vs analytical (2D)", 800, 600)
     c.SetGrid()
+    c.SetRightMargin(0.32)
     gr_mc.SetTitle("Core radius scan (2D MC vs analytical);Core radius a (nm);Shell crossings")
     gr_mc.SetMarkerStyle(20)
     gr_mc.SetMarkerSize(1.1)
@@ -581,20 +612,21 @@ def plot_core_radius_mc_vs_ana(values, mc_mean, mc_sem, ana_achieved, plots_dir,
     gr_ana.SetLineWidth(2)
     gr_ana.Draw("L SAME")
 
-    leg = TLegend(0.15, 0.75, 0.45, 0.88)
-    leg.SetBorderSize(1)
+    leg = TLegend(0.72, 0.80, 0.97, 0.92)
+    leg.SetBorderSize(0)
     leg.SetFillStyle(0)
-    leg.AddEntry(gr_mc, "2D MC mean (SEM)", "lpe")
+    leg.AddEntry(gr_mc, "2D MC mean (#sigma)", "lpe")
     leg.AddEntry(gr_ana, "Analytical (achieved #phi)", "l")
     leg.Draw()
 
-    lat = TLatex()
-    lat.SetNDC()
-    lat.SetTextSize(0.03)
-    y = 0.70
+    text = TPaveText(0.70, 0.45, 0.98, 0.78, "NDC")
+    text.SetFillColor(0)
+    text.SetBorderSize(1)
+    text.SetTextAlign(12)
+    text.SetTextSize(0.027)
     for line in annotation_lines:
-        lat.DrawLatex(0.55, y, line)
-        y -= 0.04
+        text.AddText(line)
+    text.Draw()
 
     out_base = os.path.join(plots_dir, "crossings_vs_core_radius_mc_vs_ana_2d")
     c.Update()
@@ -776,15 +808,31 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
         elif scan_name == "d_nm":
             annotation[1] = f"a={ref['a_nm']} nm, #phi={ref['phi']}"
         elif scan_name == "phi":
-            annotation[1] = f"a={ref['a_nm']} nm, d={ref['d_nm']} nm"
+            annotation = [
+                f"L={mc_cfg.get('L_um', ref['L_um'])} #mum",
+                f"W={W_um} #mum",
+            ]
         elif scan_name == "L_um":
             annotation[1] = f"a={ref['a_nm']} nm, d={ref['d_nm']} nm, #phi={ref['phi']}"
 
         phi_x_values = None
         if scan_name == "phi":
             phi_x_values = results.get("achieved_phi", results["area_fraction"])
-            annotation[0] = f"L={mc_cfg.get('L_um', ref['L_um'])} #mum, W={W_um} #mum"
-            annotation[1] = f"Target #phi: {', '.join([str(v) for v in values])}"
+            annotation = [
+                f"L={mc_cfg.get('L_um', ref['L_um'])} #mum",
+                f"W={W_um} #mum",
+            ]
+            annotation.extend(
+                format_value_block(
+                    ["Target #phi"],
+                    values,
+                    value_fmt="{:.3f}",
+                    max_per_line=2,
+                    max_lines=1,
+                    use_range_if_long=True,
+                    include_mean=False,
+                )
+            )
         elif scan_name == "L_um":
             annotation[0] = f"W={W_um} #mum, #phi={ref['phi']}"
             annotation[1] = f"a={ref['a_nm']} nm, d={ref['d_nm']} nm"
@@ -796,15 +844,35 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             annotation[1] = f"d={ref['d_nm']} nm, #phi={ref['phi']}"
 
         achieved_phi_vals = results.get("achieved_phi", results["area_fraction"])
-        phi_text = format_phi_values(achieved_phi_vals)
-        if phi_text:
-            annotation.append(f"Achieved #phi (vol): {phi_text}")
+        if scan_name == "phi":
+            phi_lines = format_value_block(
+                ["Achieved #phi"],
+                achieved_phi_vals,
+                value_fmt="{:.3f}",
+                max_per_line=2,
+                max_lines=1,
+                use_range_if_long=True,
+                include_mean=False,
+            )
+        else:
+            phi_lines = format_value_block(
+                ["Achieved #phi"],
+                achieved_phi_vals,
+                value_fmt="{:.3f}",
+                max_per_line=2,
+                max_lines=3,
+                use_range_if_long=True,
+            )
+        if phi_lines:
+            annotation.extend(phi_lines)
+
+        annotation.extend(analytical_formula_lines())
 
         plot_scan_summary(
             scan_name,
             results["values"],
             results["mc_mean"],
-            results["mc_sem"],
+            results["mc_std"],
             results["ana_target"],
             results["ana_achieved"],
             plots_dir,
@@ -817,12 +885,13 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
                 f"L={mc_cfg.get('L_um', ref['L_um'])} #mum, W={W_um} #mum",
                 f"d={ref['d_nm']} nm, #phi={ref['phi']}",
             ]
-            if phi_text:
-                core_annotation.append(f"Achieved #phi (vol): {phi_text}")
+            if phi_lines:
+                core_annotation.extend(phi_lines)
+            core_annotation.extend(analytical_formula_lines())
             plot_core_radius_mc_vs_ana(
                 results["values"],
                 results["mc_mean"],
-                results["mc_sem"],
+                results["mc_std"],
                 results["ana_achieved"],
                 plots_dir,
                 core_annotation,
@@ -897,11 +966,42 @@ def regenerate_scan_plots_from_summary(summary_path, config_path=None):
         ]
 
         achieved_phi_vals = results.get("achieved_phi", results.get("area_fraction", []))
-        phi_text = format_phi_values(achieved_phi_vals)
+        if scan_name == "phi":
+            phi_lines = format_value_block(
+                ["Achieved #phi"],
+                achieved_phi_vals,
+                value_fmt="{:.3f}",
+                max_per_line=2,
+                max_lines=1,
+                use_range_if_long=True,
+                include_mean=False,
+            )
+        else:
+            phi_lines = format_value_block(
+                ["Achieved #phi"],
+                achieved_phi_vals,
+                value_fmt="{:.3f}",
+                max_per_line=2,
+                max_lines=3,
+                use_range_if_long=True,
+            )
 
         if scan_name == "phi":
-            annotation[0] = f"L={L_um} #mum, W={W_um} #mum"
-            annotation[1] = f"Target #phi: {', '.join([str(v) for v in values])}"
+            annotation = [
+                f"L={L_um} #mum",
+                f"W={W_um} #mum",
+            ]
+            annotation.extend(
+                format_value_block(
+                    ["Target #phi"],
+                    values,
+                    value_fmt="{:.3f}",
+                    max_per_line=2,
+                    max_lines=1,
+                    use_range_if_long=True,
+                    include_mean=False,
+                )
+            )
             x_values = achieved_phi_vals if achieved_phi_vals else values
         elif scan_name == "L_um":
             ref_phi = ref.get("phi", "n/a")
@@ -925,14 +1025,15 @@ def regenerate_scan_plots_from_summary(summary_path, config_path=None):
         else:
             x_values = None
 
-        if phi_text:
-            annotation.append(f"Achieved #phi (vol): {phi_text}")
+        if phi_lines:
+            annotation.extend(phi_lines)
+        annotation.extend(analytical_formula_lines())
 
         plot_scan_summary(
             scan_name,
             values,
             mc_mean,
-            mc_sem,
+            results.get("mc_std", []),
             ana_target,
             ana_achieved,
             plots_dir,
@@ -945,12 +1046,13 @@ def regenerate_scan_plots_from_summary(summary_path, config_path=None):
                 f"L={L_um} #mum, W={W_um} #mum",
                 f"d={ref.get('d_nm', 'n/a')} nm, #phi={ref.get('phi', 'n/a')}",
             ]
-            if phi_text:
-                core_annotation.append(f"Achieved #phi (vol): {phi_text}")
+            if phi_lines:
+                core_annotation.extend(phi_lines)
+            core_annotation.extend(analytical_formula_lines())
             plot_core_radius_mc_vs_ana(
                 values,
                 mc_mean,
-                mc_sem,
+                results.get("mc_std", []),
                 ana_achieved,
                 plots_dir,
                 core_annotation,
