@@ -17,6 +17,7 @@ import json
 import os
 import sys
 import array
+import time
 import numpy as np
 from geometry_analytical import expected_crossings
 
@@ -30,6 +31,57 @@ def format_param(value):
     else:
         out = f"{value:.6g}"
     return out.replace(".", "p")
+
+
+def format_seconds(value):
+    if value < 1.0:
+        return f"{value * 1000.0:.1f} ms"
+    if value < 60.0:
+        return f"{value:.2f} s"
+    return f"{value / 60.0:.2f} min"
+
+
+def select_plot_indices(n_values, mode):
+    """
+    Select which indices to plot in a scan.
+    mode can be:
+      - "all"
+      - "none"
+      - "first"
+      - "last"
+      - "first_last"
+      - int (number of evenly spaced plots)
+    """
+    if n_values <= 0:
+        return set()
+    if mode is None:
+        mode = "all"
+    if isinstance(mode, int):
+        count = max(0, mode)
+        if count <= 0:
+            return set()
+        if count == 1:
+            return {0}
+        if count >= n_values:
+            return set(range(n_values))
+        indices = set()
+        for i in range(count):
+            idx = int(round(i * (n_values - 1) / (count - 1)))
+            indices.add(idx)
+        return indices
+    if isinstance(mode, str):
+        key = mode.strip().lower()
+        if key == "all":
+            return set(range(n_values))
+        if key == "none":
+            return set()
+        if key == "first":
+            return {0}
+        if key == "last":
+            return {n_values - 1}
+        if key == "first_last":
+            return {0, n_values - 1} if n_values > 1 else {0}
+    return set(range(n_values))
 
 
 def generate_circles_2d(L_um, W_um, a_nm, d_nm, phi, seed=None, max_attempts_per_circle=5000):
@@ -74,6 +126,22 @@ def generate_circles_2d(L_um, W_um, a_nm, d_nm, phi, seed=None, max_attempts_per
     
     circles = []
     consecutive_failures = 0
+
+    # Use a simple cell list to accelerate overlap checks.
+    # Max circle radius is R, so max overlap distance is 2R.
+    # With cell size = 2R, any overlapping circles must be in the same
+    # or neighboring cells (3x3 neighborhood).
+    cell_size = 2.0 * R_nm
+    nx = max(1, int(np.ceil(W_nm / cell_size)))
+    nz = max(1, int(np.ceil(L_nm / cell_size)))
+    grid = [[[] for _ in range(nz)] for _ in range(nx)]
+
+    def cell_index(x, z):
+        ix = int(x / cell_size)
+        iz = int(z / cell_size)
+        ix = min(max(ix, 0), nx - 1)
+        iz = min(max(iz, 0), nz - 1)
+        return ix, iz
     
     # 2D slice geometry (slice plane at y = 0):
     #
@@ -108,19 +176,32 @@ def generate_circles_2d(L_um, W_um, a_nm, d_nm, phi, seed=None, max_attempts_per
             else:
                 r_core = 0.0  # no core visible
             
-            # Check overlap with existing circles
+            # Check overlap with nearby circles only (cell list)
             overlaps = False
-            for cx, cz, cr_out, cr_core in circles:
-                # Use periodic boundary in x (horizontal)
-                dx = min(abs(x - cx), W_nm - abs(x - cx))
-                dz = abs(z - cz)
-                dist = np.sqrt(dx**2 + dz**2)
-                if dist < r_outer + cr_out:  # circles overlap
-                    overlaps = True
+            ix, iz = cell_index(x, z)
+            for dix in (-1, 0, 1):
+                nix = (ix + dix) % nx  # periodic in x
+                for diz in (-1, 0, 1):
+                    niz = iz + diz
+                    if niz < 0 or niz >= nz:
+                        continue
+                    for cx, cz, cr_out, cr_core in grid[nix][niz]:
+                        # Use periodic boundary in x (horizontal)
+                        dx = abs(x - cx)
+                        if dx > 0.5 * W_nm:
+                            dx = W_nm - dx
+                        dz = abs(z - cz)
+                        if (dx * dx + dz * dz) < (r_outer + cr_out) ** 2:
+                            overlaps = True
+                            break
+                    if overlaps:
+                        break
+                if overlaps:
                     break
             
             if not overlaps:
                 circles.append((x, z, r_outer, r_core))
+                grid[ix][iz].append((x, z, r_outer, r_core))
                 placed = True
                 consecutive_failures = 0
                 break
@@ -343,7 +424,7 @@ def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achiev
     c.SaveAs(out_base + ".root")
 
 
-def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir):
+def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False):
     scan_ranges = cfg.get("scan_ranges", {})
     if not scan_ranges:
         print("No scan_ranges found in config; skipping scan.")
@@ -353,8 +434,17 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir):
     n_rays = mc_cfg.get("n_rays", 2000)
     seed_base = mc_cfg.get("seed", 42)
     plot_max_circles = mc_cfg.get("plot_max_circles", 2000)
+    scan_plot_mode = mc_cfg.get("scan_slice_plots", "first_last")
+    quick_max_values = mc_cfg.get("quick_scan_max_values", 2)
+    quick_n_rays = mc_cfg.get("quick_scan_n_rays", max(200, int(n_rays / 4)))
+    quick_plot_max_circles = mc_cfg.get("quick_scan_plot_max_circles", min(400, plot_max_circles))
     slice_dir = os.path.join(plots_dir, "slice_configs_2d")
     os.makedirs(slice_dir, exist_ok=True)
+
+    if quick:
+        print("[Quick scan] limiting values and rays for faster debug timing.")
+        n_rays = quick_n_rays
+        plot_max_circles = quick_plot_max_circles
 
     summary = {
         "meta": {
@@ -362,17 +452,25 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir):
             "n_rays": n_rays,
             "seed_base": seed_base,
             "plot_max_circles": plot_max_circles,
+            "scan_slice_plots": scan_plot_mode,
+            "quick_scan": quick,
+            "quick_scan_max_values": quick_max_values if quick else None,
         },
         "scans": {},
     }
 
     scan_keys = ["phi", "d_nm", "a_nm", "L_um"]
     scan_index = 0
+    t_scan_start = time.perf_counter()
 
     for scan_name in scan_keys:
         values = scan_ranges.get(scan_name, [])
         if not values:
             continue
+        if quick and len(values) > quick_max_values:
+            values = values[:quick_max_values]
+
+        plot_indices = select_plot_indices(len(values), scan_plot_mode)
 
         print(f"\n[Scan] {scan_name} ({len(values)} values)")
         sys.stdout.flush()
@@ -409,12 +507,15 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir):
             print(f"  {scan_name}={val}: L={L_um} um, W={W_um} um, a={a_nm} nm, d={d_nm} nm, phi={phi}")
             sys.stdout.flush()
 
+            t0 = time.perf_counter()
             circles, area_fraction = generate_circles_2d(
                 L_um, W_um, a_nm, d_nm, phi, seed=seed_case
             )
+            t1 = time.perf_counter()
             crossings_arr, circles_hit_arr = trace_rays_2d(
                 circles, W_um * 1000.0, n_rays, seed_case + 1
             )
+            t2 = time.perf_counter()
 
             mean_cross = float(np.mean(crossings_arr))
             std_cross = float(np.std(crossings_arr))
@@ -434,21 +535,34 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir):
             results["n_circles"].append(int(len(circles)))
             results["mean_circles"].append(mean_circles)
 
-            # Plot example slice configuration for this parameter set
-            tag = f"{scan_name}_{format_param(val)}"
-            out_base = os.path.join(slice_dir, f"slice_config_{tag}")
-            title = f"2D slice: {scan_name} = {val}"
-            params_text = f"L={L_um} #mum, W={W_um} #mum, a={a_nm} nm, d={d_nm} nm, #phi={phi}"
-            plot_slice_configuration(
-                circles,
-                W_um * 1000.0,
-                L_um * 1000.0,
-                out_base,
-                title,
-                params_text,
-                max_circles=plot_max_circles,
-                seed=seed_case + 2,
+            t3 = None
+            if idx in plot_indices:
+                # Plot example slice configuration for this parameter set
+                tag = f"{scan_name}_{format_param(val)}"
+                out_base = os.path.join(slice_dir, f"slice_config_{tag}")
+                title = f"2D slice: {scan_name} = {val}"
+                params_text = f"L={L_um} #mum, W={W_um} #mum, a={a_nm} nm, d={d_nm} nm, #phi={phi}"
+                plot_slice_configuration(
+                    circles,
+                    W_um * 1000.0,
+                    L_um * 1000.0,
+                    out_base,
+                    title,
+                    params_text,
+                    max_circles=plot_max_circles,
+                    seed=seed_case + 2,
+                )
+                t3 = time.perf_counter()
+            else:
+                t3 = time.perf_counter()
+            print(
+                "    Timings:"
+                f" circles={format_seconds(t1 - t0)},"
+                f" rays={format_seconds(t2 - t1)},"
+                f" plot={format_seconds(t3 - t2)},"
+                f" total={format_seconds(t3 - t0)}"
             )
+            sys.stdout.flush()
 
         summary["scans"][scan_name] = results
 
@@ -477,6 +591,10 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir):
         )
 
         scan_index += 1
+
+    t_scan_end = time.perf_counter()
+    print(f"\n[Scan] Total time: {format_seconds(t_scan_end - t_scan_start)}")
+    sys.stdout.flush()
 
     summary_path = os.path.join(output_dir, "geometry_mc_2d_scan_summary.json")
     with open(summary_path, "w") as f:
@@ -656,6 +774,8 @@ def main():
                         help="Path to config JSON")
     parser.add_argument("--scan", action="store_true",
                         help="Run parameter scans and summary plots")
+    parser.add_argument("--scan-quick", action="store_true",
+                        help="Run a reduced scan with fewer values/rays (debug timing)")
     args = parser.parse_args()
     
     if args.scan:
@@ -667,7 +787,7 @@ def main():
         output_dir = cfg.get("output_dir", "results/geometry")
         os.makedirs(plots_dir, exist_ok=True)
         os.makedirs(output_dir, exist_ok=True)
-        run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir)
+        run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=args.scan_quick)
     else:
         run_montecarlo_2d(args.config)
 

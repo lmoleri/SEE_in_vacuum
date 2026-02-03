@@ -21,7 +21,8 @@
     "W_um": 2.0,
     "L_um": 5.0,
     "n_rays": 2000,
-    "seed": 42
+    "seed": 42,
+    "scan_slice_plots": "first"
   },
   "output_dir": "results/geometry",
   "plots_dir": "plots/geometry"
