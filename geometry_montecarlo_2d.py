@@ -296,12 +296,12 @@ def trace_rays_2d(circles, W_nm, n_rays, seed, verbose=False):
 
 
 def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
-                             max_circles=2000, seed=123):
+                             max_circles=None, seed=123):
     """
     Plot an example 2D slice configuration (outer + inner circles).
     """
     import ROOT
-    from ROOT import TCanvas, TH2D, TEllipse, TLatex, gStyle
+    from ROOT import TCanvas, TH2D, TEllipse, TLatex, TPaveText, gStyle, gPad
 
     gStyle.SetOptStat(0)
     gStyle.SetOptTitle(0)
@@ -309,23 +309,61 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
     n_total = len(circles)
     n_show = n_total
     indices = np.arange(n_total)
-    if max_circles is not None and n_total > max_circles:
+    if max_circles is not None and max_circles > 0 and n_total > max_circles:
         rng = np.random.default_rng(seed)
         indices = rng.choice(indices, size=max_circles, replace=False)
         n_show = len(indices)
 
-    c = TCanvas(f"c_slice_{format_param(seed)}", title, 900, 700)
+    W_um = W_nm * 1.0e-3
+    L_um = L_nm * 1.0e-3
+    # Choose canvas size so the drawable area (after margins) matches the data aspect.
+    aspect = L_um / W_um if W_um > 0 else 1.0
+    left_margin = 0.12
+    right_margin = 0.06
+    bottom_margin = 0.12
+    top_margin = 0.22
+
+    width = 900
+    drawable_w = width * (1.0 - left_margin - right_margin)
+    drawable_h = drawable_w * aspect
+    height = int(drawable_h / (1.0 - top_margin - bottom_margin))
+
+    if height > 1200:
+        height = 1200
+        drawable_h = height * (1.0 - top_margin - bottom_margin)
+        drawable_w = drawable_h / aspect if aspect > 0 else drawable_h
+        width = int(drawable_w / (1.0 - left_margin - right_margin))
+    if height < 500:
+        height = 500
+        drawable_h = height * (1.0 - top_margin - bottom_margin)
+        drawable_w = drawable_h / aspect if aspect > 0 else drawable_h
+        width = int(drawable_w / (1.0 - left_margin - right_margin))
+    width = max(500, min(1200, width))
+
+    c = TCanvas(f"c_slice_{format_param(seed)}", title, width, height)
     c.SetGrid()
 
-    frame = TH2D(f"frame_slice_{format_param(seed)}", "", 10, 0.0, W_nm, 10, 0.0, L_nm)
-    frame.SetXTitle("x (nm)")
-    frame.SetYTitle("z (nm)")
+    gPad.SetLeftMargin(left_margin)
+    gPad.SetBottomMargin(bottom_margin)
+    gPad.SetTopMargin(top_margin)
+    gPad.SetRightMargin(right_margin)
+
+    frame = TH2D(f"frame_slice_{format_param(seed)}", "", 10, 0.0, W_um, 10, 0.0, L_um)
+    frame.SetXTitle("x (#mum)")
+    frame.SetYTitle("z (#mum)")
     frame.Draw("AXIS")
+    c.Update()
+    gPad.SetFixedAspectRatio(1)
+    gPad.Modified()
+    gPad.Update()
 
     ellipses = []
     for idx in indices:
         x, z, r_out, r_core = circles[int(idx)]
-        outer = TEllipse(x, z, r_out)
+        x_um = x * 1.0e-3
+        z_um = z * 1.0e-3
+        r_out_um = r_out * 1.0e-3
+        outer = TEllipse(x_um, z_um, r_out_um)
         outer.SetLineColor(ROOT.kBlue + 2)
         outer.SetLineWidth(1)
         outer.SetFillStyle(0)
@@ -333,22 +371,26 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
         ellipses.append(outer)
 
         if r_core > 0.0:
-            inner = TEllipse(x, z, r_core)
+            r_core_um = r_core * 1.0e-3
+            inner = TEllipse(x_um, z_um, r_core_um)
             inner.SetLineColor(ROOT.kRed + 1)
             inner.SetLineWidth(1)
             inner.SetFillStyle(0)
             inner.Draw()
             ellipses.append(inner)
 
-    lat = TLatex()
-    lat.SetNDC()
-    lat.SetTextSize(0.03)
-    lat.DrawLatex(0.15, 0.93, title)
-    lat.DrawLatex(0.15, 0.89, params_text)
+    text = TPaveText(0.20, 0.82, 0.80, 0.98, "NDC")
+    text.SetFillColor(0)
+    text.SetBorderSize(1)
+    text.SetTextAlign(12)
+    text.SetTextSize(0.03)
+    text.AddText(title)
+    text.AddText(params_text)
     if n_show < n_total:
-        lat.DrawLatex(0.15, 0.85, f"Showing {n_show} of {n_total} circles")
+        text.AddText(f"Showing {n_show} of {n_total} circles")
     else:
-        lat.DrawLatex(0.15, 0.85, f"Showing {n_show} circles")
+        text.AddText(f"Showing {n_show} circles")
+    text.Draw()
 
     c.Update()
     c.SaveAs(out_base + ".pdf")
@@ -433,18 +475,21 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
     W_um = mc_cfg.get("W_um", 10.0)
     n_rays = mc_cfg.get("n_rays", 2000)
     seed_base = mc_cfg.get("seed", 42)
-    plot_max_circles = mc_cfg.get("plot_max_circles", 2000)
+    plot_max_circles = mc_cfg.get("plot_max_circles", None)
+    if plot_max_circles is not None and plot_max_circles <= 0:
+        plot_max_circles = None
     scan_plot_mode = mc_cfg.get("scan_slice_plots", "first_last")
     quick_max_values = mc_cfg.get("quick_scan_max_values", 2)
     quick_n_rays = mc_cfg.get("quick_scan_n_rays", max(200, int(n_rays / 4)))
-    quick_plot_max_circles = mc_cfg.get("quick_scan_plot_max_circles", min(400, plot_max_circles))
+    quick_plot_max_circles = mc_cfg.get("quick_scan_plot_max_circles", 400)
     slice_dir = os.path.join(plots_dir, "slice_configs_2d")
     os.makedirs(slice_dir, exist_ok=True)
 
     if quick:
         print("[Quick scan] limiting values and rays for faster debug timing.")
         n_rays = quick_n_rays
-        plot_max_circles = quick_plot_max_circles
+        if plot_max_circles is None:
+            plot_max_circles = quick_plot_max_circles
 
     summary = {
         "meta": {
@@ -633,7 +678,9 @@ def run_montecarlo_2d(config_path=None):
     n_rays = mc_cfg.get("n_rays", 10000)
     seed = mc_cfg.get("seed", 42)
     plot_slice = mc_cfg.get("plot_slice", True)
-    plot_max_circles = mc_cfg.get("plot_max_circles", 2000)
+    plot_max_circles = mc_cfg.get("plot_max_circles", None)
+    if plot_max_circles is not None and plot_max_circles <= 0:
+        plot_max_circles = None
     
     L_nm = L_um * 1000.0
     W_nm = W_um * 1000.0
