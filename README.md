@@ -156,7 +156,44 @@ bash scripts/run_draw_summary_models.sh \
 
 Model comparison canvases are also exported to `plots/` alongside the summary root file.
 
-### 4. Monte Carlo Post-Processing (Toy Model for Muon SEY)
+### 4. Geometry Toy Model (Shell Crossings)
+
+This repository also includes a geometry-only toy model for shell crossings. It supports analytical scans and a 2D slice Monte Carlo (circles cut from 3D spheres).
+
+**Config file:** `config/geometry/geometry_config.json`
+
+**Key fields:**
+- `reference`: baseline parameters (`L_um`, `a_nm`, `d_nm`, `phi`)
+- `scan_ranges`: arrays for `phi`, `d_nm`, `a_nm`, `L_um`
+- `montecarlo_2d`: MC settings (`W_um`, `n_rays`, `seed`, `scan_slice_plots`)
+
+**Run analytical scans:**
+```bash
+conda run -n geant4 python geometry_analytical.py
+```
+
+**Run 2D MC scans:**
+```bash
+conda run -n geant4 python geometry_montecarlo_2d.py --scan
+```
+
+**Regenerate plots without re-running MC:**
+```bash
+conda run -n geant4 python geometry_montecarlo_2d.py --plot-only
+```
+
+**Outputs:**
+- `results/geometry/geometry_mc_2d_scan_summary.json`: cached scan results (used by `--plot-only`)
+- `plots/geometry/mc_2d_scan_*.pdf|root`: scan summaries
+- `plots/geometry/slice_configs_2d/*_zoom.pdf|root`: zoomed slice configurations
+- `plots/geometry/distributions_2d/crossings_dist_*.pdf|root`: per-scan crossing histograms
+- `plots/geometry/crossings_vs_core_radius_mc_vs_ana_2d.pdf|root`: 2D MC vs analytical comparison
+
+**Filling factor convention:** The MC uses the 3D volume filling factor `phi` to set sphere density. The achieved value is estimated from the slice area (Delesse principle) and is always reported as a **volume** filling factor. Plots annotate this as `Achieved #phi (vol)` and the `phi` scan uses achieved `phi` on the x-axis.
+
+See `doc/GEOMETRY_2D_MC.md` for more details.
+
+### 5. Monte Carlo Post-Processing (Toy Model for Muon SEY)
 
 For muon simulations, a custom Monte Carlo method can be applied to calculate secondary electron emission (SEY) from energy deposition data. This post-processing step uses a probabilistic model to estimate SEY based on:
 
@@ -213,7 +250,7 @@ See [doc/MUON_SEY_MONTE_CARLO.md](doc/MUON_SEY_MONTE_CARLO.md) for detailed docu
 3. Apply Monte Carlo post-processing to calculate SEY
 4. Compare results with experimental data or other models
 
-**5. Toy events (many crossings per event)**
+**6. Toy events (many crossings per event)**
 
 For studies where one "event" has many primary crossings of the shell: energy depositions are sampled from an EdepPrimary histogram (e.g. from a 100k Geant4 run), and SEE per crossing is drawn from Poisson(μ(ΔE)). Total SE per event is the sum over crossings. All parameters are set via a JSON config file.
 

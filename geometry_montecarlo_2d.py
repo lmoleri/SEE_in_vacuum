@@ -41,6 +41,22 @@ def format_seconds(value):
     return f"{value / 60.0:.2f} min"
 
 
+def format_phi_values(values):
+    """
+    Format achieved volume filling factor values for annotations.
+    """
+    if not values:
+        return None
+    if len(values) <= 4:
+        return ", ".join([f"{v:.3f}" for v in values])
+    vmin = float(min(values))
+    vmax = float(max(values))
+    vmean = float(np.mean(values))
+    if abs(vmax - vmin) < 1e-4:
+        return f"{vmean:.3f}"
+    return f"{vmin:.3f}-{vmax:.3f} (mean {vmean:.3f})"
+
+
 def select_plot_indices(n_values, mode):
     """
     Select which indices to plot in a scan.
@@ -217,20 +233,18 @@ def generate_circles_2d(L_um, W_um, a_nm, d_nm, phi, seed=None, max_attempts_per
             print(f"  Placed {len(circles)}/{N_target} circles...")
             sys.stdout.flush()
     
-    # Estimate actual phi from placed circles
-    # This is approximate since circles have varying radii
+    # Estimate achieved volume fraction from placed circles.
+    # This is approximate since circles have varying radii.
+    # By Delesse's principle, area fraction in a random slice approximates
+    # the 3D volume fraction for an isotropic distribution.
     total_circle_area = sum(np.pi * r_out**2 for _, _, r_out, _ in circles)
     slice_area = W_nm * L_nm
     area_fraction = total_circle_area / slice_area
-    # Convert back to approximate volume fraction
-    # area_fraction ≈ (average cross-section) * n_3D * 2R
-    # For uniform h: <pi*r²> = <pi*(R²-h²)> = pi*R² * (2/3) 
-    # So area_fraction ≈ (2/3)*pi*R² * n_3D * 2R = (4/3)*pi*R³ * n_3D = phi
-    actual_phi = area_fraction  # approximate
+    actual_phi = area_fraction  # estimated volume fraction
     
     if len(circles) >= N_target:
         print(f"  Placed all {len(circles)} circles")
-    print(f"  Area fraction in slice: {area_fraction:.4f}")
+    print(f"  Achieved volume filling factor (est.): {actual_phi:.4f}")
     sys.stdout.flush()
     
     return circles, actual_phi
@@ -296,7 +310,7 @@ def trace_rays_2d(circles, W_nm, n_rays, seed, verbose=False):
 
 
 def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
-                             max_circles=None, seed=123):
+                             max_circles=None, seed=123, zoom_y_um=2.0):
     """
     Plot an example 2D slice configuration (outer + inner circles).
     """
@@ -316,92 +330,109 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
 
     W_um = W_nm * 1.0e-3
     L_um = L_nm * 1.0e-3
-    # Choose canvas size so the drawable area (after margins) matches the data aspect.
-    aspect = L_um / W_um if W_um > 0 else 1.0
-    left_margin = 0.12
-    right_margin = 0.06
-    bottom_margin = 0.12
-    top_margin = 0.28
 
-    width = 900
-    drawable_w = width * (1.0 - left_margin - right_margin)
-    drawable_h = drawable_w * aspect
-    height = int(drawable_h / (1.0 - top_margin - bottom_margin))
+    def draw_slice(canvas_name, frame_name, y_max_um, out_suffix, note_lines):
+        # Choose canvas size so the drawable area (after margins) matches the data aspect.
+        aspect = (y_max_um / W_um) if W_um > 0 else 1.0
+        left_margin = 0.12
+        right_margin = 0.06
+        bottom_margin = 0.12
+        top_margin = 0.28
 
-    if height > 1200:
-        height = 1200
-        drawable_h = height * (1.0 - top_margin - bottom_margin)
-        drawable_w = drawable_h / aspect if aspect > 0 else drawable_h
-        width = int(drawable_w / (1.0 - left_margin - right_margin))
-    if height < 500:
-        height = 500
-        drawable_h = height * (1.0 - top_margin - bottom_margin)
-        drawable_w = drawable_h / aspect if aspect > 0 else drawable_h
-        width = int(drawable_w / (1.0 - left_margin - right_margin))
-    width = max(500, min(1200, width))
+        width = 900
+        drawable_w = width * (1.0 - left_margin - right_margin)
+        drawable_h = drawable_w * aspect
+        height = int(drawable_h / (1.0 - top_margin - bottom_margin))
 
-    c = TCanvas(f"c_slice_{format_param(seed)}", title, width, height)
-    c.SetGrid()
+        if height > 1200:
+            height = 1200
+            drawable_h = height * (1.0 - top_margin - bottom_margin)
+            drawable_w = drawable_h / aspect if aspect > 0 else drawable_h
+            width = int(drawable_w / (1.0 - left_margin - right_margin))
+        if height < 500:
+            height = 500
+            drawable_h = height * (1.0 - top_margin - bottom_margin)
+            drawable_w = drawable_h / aspect if aspect > 0 else drawable_h
+            width = int(drawable_w / (1.0 - left_margin - right_margin))
+        width = max(500, min(1200, width))
 
-    gPad.SetLeftMargin(left_margin)
-    gPad.SetBottomMargin(bottom_margin)
-    gPad.SetTopMargin(top_margin)
-    gPad.SetRightMargin(right_margin)
+        c = TCanvas(canvas_name, title, width, height)
+        c.SetGrid()
 
-    frame = TH2D(f"frame_slice_{format_param(seed)}", "", 10, 0.0, W_um, 10, 0.0, L_um)
-    frame.SetXTitle("x (#mum)")
-    frame.SetYTitle("z (#mum)")
-    frame.Draw("AXIS")
-    c.Update()
-    gPad.SetFixedAspectRatio(1)
-    gPad.Modified()
-    gPad.Update()
+        gPad.SetLeftMargin(left_margin)
+        gPad.SetBottomMargin(bottom_margin)
+        gPad.SetTopMargin(top_margin)
+        gPad.SetRightMargin(right_margin)
 
-    ellipses = []
-    for idx in indices:
-        x, z, r_out, r_core = circles[int(idx)]
-        x_um = x * 1.0e-3
-        z_um = z * 1.0e-3
-        r_out_um = r_out * 1.0e-3
-        outer = TEllipse(x_um, z_um, r_out_um)
-        outer.SetLineColor(ROOT.kBlue + 2)
-        outer.SetLineWidth(1)
-        outer.SetFillStyle(0)
-        outer.Draw()
-        ellipses.append(outer)
+        frame = TH2D(frame_name, "", 10, 0.0, W_um, 10, 0.0, y_max_um)
+        frame.SetXTitle("x (#mum)")
+        frame.SetYTitle("z (#mum)")
+        frame.Draw("AXIS")
+        c.Update()
+        gPad.SetFixedAspectRatio(1)
+        gPad.Modified()
+        gPad.Update()
 
-        if r_core > 0.0:
-            r_core_um = r_core * 1.0e-3
-            inner = TEllipse(x_um, z_um, r_core_um)
-            inner.SetLineColor(ROOT.kRed + 1)
-            inner.SetLineWidth(1)
-            inner.SetFillStyle(0)
-            inner.Draw()
-            ellipses.append(inner)
+        ellipses = []
+        for idx in indices:
+            x, z, r_out, r_core = circles[int(idx)]
+            x_um = x * 1.0e-3
+            z_um = z * 1.0e-3
+            if z_um < 0.0 or z_um > y_max_um:
+                continue
+            r_out_um = r_out * 1.0e-3
+            outer = TEllipse(x_um, z_um, r_out_um)
+            outer.SetLineColor(ROOT.kBlue + 2)
+            outer.SetLineWidth(1)
+            outer.SetFillStyle(0)
+            outer.Draw()
+            ellipses.append(outer)
 
-    text = TPaveText(0.15, 0.80, 0.85, 0.98, "NDC")
-    text.SetFillColor(0)
-    text.SetBorderSize(1)
-    text.SetTextAlign(12)
-    text.SetTextSize(0.028)
-    text.SetTextFont(42)
-    text.AddText(title)
-    text.AddText(params_text)
+            if r_core > 0.0:
+                r_core_um = r_core * 1.0e-3
+                inner = TEllipse(x_um, z_um, r_core_um)
+                inner.SetLineColor(ROOT.kRed + 1)
+                inner.SetLineWidth(1)
+                inner.SetFillStyle(0)
+                inner.Draw()
+                ellipses.append(inner)
+
+        text = TPaveText(0.15, 0.80, 0.85, 0.98, "NDC")
+        text.SetFillColor(0)
+        text.SetBorderSize(1)
+        text.SetTextAlign(12)
+        text.SetTextSize(0.028)
+        text.SetTextFont(42)
+        for line in note_lines:
+            text.AddText(line)
+        text.Draw()
+
+        c.Update()
+        c.SaveAs(out_base + out_suffix + ".pdf")
+        c.SaveAs(out_base + out_suffix + ".root")
+
+    # Zoomed plot in y (default 2 um). Only generate zoomed views to keep circles round.
+    zoom_note_lines = [
+        f"{title} (zoom z#leq{zoom_y_um:.1f} #mum)",
+        params_text,
+    ]
     if n_show < n_total:
-        text.AddText(f"Showing {n_show} of {n_total} circles")
+        zoom_note_lines.append(f"Showing {n_show} of {n_total} circles")
     else:
-        text.AddText(f"Showing {n_show} circles")
-    text.Draw()
-
-    c.Update()
-    c.SaveAs(out_base + ".pdf")
-    c.SaveAs(out_base + ".root")
+        zoom_note_lines.append(f"Showing {n_show} circles")
+    draw_slice(
+        f"c_slice_{format_param(seed)}_zoom",
+        f"frame_slice_{format_param(seed)}_zoom",
+        min(zoom_y_um, L_um),
+        "_zoom",
+        zoom_note_lines,
+    )
 
 
 def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achieved,
-                      plots_dir, annotation_lines):
+                      plots_dir, annotation_lines, x_values=None):
     import ROOT
-    from ROOT import TCanvas, TGraphErrors, TGraph, TLatex, TLegend, gStyle
+    from ROOT import TCanvas, TGraphErrors, TGraph, TLatex, TLegend, TPaveText, gStyle
 
     gStyle.SetOptStat(0)
 
@@ -412,8 +443,11 @@ def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achiev
         "L_um": "Slab thickness L (#mum)",
     }
     x_label = x_label_map.get(scan_name, scan_name)
+    if scan_name == "phi":
+        x_label = "Achieved volume filling factor #phi"
 
-    n = len(values)
+    x_vals = values if x_values is None else x_values
+    n = len(x_vals)
     if n == 0:
         return
 
@@ -421,7 +455,7 @@ def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achiev
     gr_ana_target = TGraph(n)
     gr_ana_ach = TGraph(n)
 
-    for i, x in enumerate(values):
+    for i, x in enumerate(x_vals):
         gr_mc.SetPoint(i, float(x), float(mc_mean[i]))
         gr_mc.SetPointError(i, 0.0, float(mc_sem[i]))
         gr_ana_target.SetPoint(i, float(x), float(ana_target[i]))
@@ -429,6 +463,8 @@ def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achiev
 
     c = TCanvas(f"c_scan_{scan_name}", f"2D MC scan: {scan_name}", 900, 650)
     c.SetGrid()
+    if scan_name in ("L_um", "phi", "d_nm", "a_nm"):
+        c.SetRightMargin(0.30)
 
     gr_mc.SetMarkerStyle(20)
     gr_mc.SetMarkerSize(1.0)
@@ -446,26 +482,75 @@ def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achiev
     gr_ana_ach.SetLineWidth(2)
     gr_ana_ach.Draw("L SAME")
 
-    leg = TLegend(0.60, 0.75, 0.88, 0.90)
+    if scan_name in ("L_um", "phi"):
+        # Place legend in the reserved right margin to avoid overlap.
+        leg = TLegend(0.72, 0.80, 0.97, 0.92)
+    else:
+        leg = TLegend(0.60, 0.75, 0.88, 0.90)
     leg.SetBorderSize(0)
     leg.AddEntry(gr_mc, "2D MC mean (SEM)", "lp")
     leg.AddEntry(gr_ana_target, "Analytical (target #phi)", "l")
     leg.AddEntry(gr_ana_ach, "Analytical (achieved #phi)", "l")
     leg.Draw()
 
-    lat = TLatex()
-    lat.SetNDC()
-    lat.SetTextSize(0.03)
-    y = 0.70
-    for line in annotation_lines:
-        lat.DrawLatex(0.15, y, line)
-        y -= 0.04
+    if scan_name in ("phi", "L_um", "d_nm", "a_nm"):
+        if scan_name in ("phi", "L_um"):
+            text = TPaveText(0.72, 0.52, 0.97, 0.78, "NDC")
+        else:
+            text = TPaveText(0.72, 0.55, 0.97, 0.88, "NDC")
+        text.SetFillColor(0)
+        text.SetBorderSize(1)
+        text.SetTextAlign(12)
+        text.SetTextSize(0.03)
+        for line in annotation_lines:
+            text.AddText(line)
+        text.Draw()
+    else:
+        lat = TLatex()
+        lat.SetNDC()
+        lat.SetTextSize(0.03)
+        y = 0.70
+        for line in annotation_lines:
+            lat.DrawLatex(0.15, y, line)
+            y -= 0.04
 
     out_base = os.path.join(plots_dir, f"mc_2d_scan_{scan_name}")
     c.Update()
     c.SaveAs(out_base + ".pdf")
     c.SaveAs(out_base + ".root")
 
+
+def plot_crossings_distribution_2d(crossings_arr, out_base, title, annotation_lines):
+    import ROOT
+    from ROOT import TCanvas, TH1D, TLatex, gStyle
+
+    gStyle.SetOptStat(110)
+    if len(crossings_arr) == 0:
+        return
+
+    max_cross = int(np.max(crossings_arr)) if np.max(crossings_arr) > 0 else 10
+    h = TH1D("h_crossings_scan_2d", "Shell crossings distribution;Crossings;Number of rays",
+             max_cross + 1, -0.5, max_cross + 0.5)
+    for v in crossings_arr:
+        h.Fill(float(v))
+
+    c = TCanvas("c_crossings_scan_2d", title, 800, 600)
+    c.SetGrid()
+    h.SetFillColor(38)
+    h.SetFillStyle(1001)
+    h.Draw()
+
+    lat = TLatex()
+    lat.SetNDC()
+    lat.SetTextSize(0.03)
+    y = 0.85
+    for line in annotation_lines:
+        lat.DrawLatex(0.15, y, line)
+        y -= 0.04
+
+    c.Update()
+    c.SaveAs(out_base + ".pdf")
+    c.SaveAs(out_base + ".root")
 
 def plot_core_radius_mc_vs_ana(values, mc_mean, mc_sem, ana_achieved, plots_dir, annotation_lines):
     import ROOT
@@ -534,6 +619,8 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
     quick_plot_max_circles = mc_cfg.get("quick_scan_plot_max_circles", 400)
     slice_dir = os.path.join(plots_dir, "slice_configs_2d")
     os.makedirs(slice_dir, exist_ok=True)
+    dist_dir = os.path.join(plots_dir, "distributions_2d")
+    os.makedirs(dist_dir, exist_ok=True)
 
     if quick:
         print("[Quick scan] limiting values and rays for faster debug timing.")
@@ -551,6 +638,12 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             "quick_scan": quick,
             "quick_scan_max_values": quick_max_values if quick else None,
         },
+        "reference": ref,
+        "mc_cfg": {
+            "L_um": mc_cfg.get("L_um", ref["L_um"]),
+            "W_um": W_um,
+        },
+        "scan_ranges": scan_ranges,
         "scans": {},
     }
 
@@ -578,6 +671,7 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             "ana_target": [],
             "ana_achieved": [],
             "area_fraction": [],
+            "achieved_phi": [],
             "n_circles": [],
             "mean_circles": [],
         }
@@ -603,7 +697,7 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             sys.stdout.flush()
 
             t0 = time.perf_counter()
-            circles, area_fraction = generate_circles_2d(
+            circles, achieved_phi = generate_circles_2d(
                 L_um, W_um, a_nm, d_nm, phi, seed=seed_case
             )
             t1 = time.perf_counter()
@@ -618,7 +712,7 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             mean_circles = float(np.mean(circles_hit_arr)) if len(circles_hit_arr) else 0.0
 
             ana_target = expected_crossings(L_um, a_nm, d_nm, phi)
-            ana_achieved = expected_crossings(L_um, a_nm, d_nm, area_fraction)
+            ana_achieved = expected_crossings(L_um, a_nm, d_nm, achieved_phi)
 
             results["values"].append(float(val))
             results["mc_mean"].append(mean_cross)
@@ -626,7 +720,8 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             results["mc_sem"].append(sem_cross)
             results["ana_target"].append(float(ana_target))
             results["ana_achieved"].append(float(ana_achieved))
-            results["area_fraction"].append(float(area_fraction))
+            results["area_fraction"].append(float(achieved_phi))
+            results["achieved_phi"].append(float(achieved_phi))
             results["n_circles"].append(int(len(circles)))
             results["mean_circles"].append(mean_circles)
 
@@ -647,9 +742,20 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
                     max_circles=plot_max_circles,
                     seed=seed_case + 2,
                 )
-                t3 = time.perf_counter()
-            else:
-                t3 = time.perf_counter()
+
+            # Crossings distribution for each scan value
+            dist_tag = f"{scan_name}_{format_param(val)}"
+            dist_base = os.path.join(dist_dir, f"crossings_dist_{dist_tag}")
+            dist_title = f"Crossings distribution: {scan_name} = {val}"
+            dist_notes = [
+                f"L={L_um} #mum, W={W_um} #mum",
+                f"a={a_nm} nm, d={d_nm} nm, #phi={phi}",
+                f"N_rays={n_rays}",
+            ]
+            plot_crossings_distribution_2d(
+                crossings_arr, dist_base, dist_title, dist_notes
+            )
+            t3 = time.perf_counter()
             print(
                 "    Timings:"
                 f" circles={format_seconds(t1 - t0)},"
@@ -674,6 +780,26 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
         elif scan_name == "L_um":
             annotation[1] = f"a={ref['a_nm']} nm, d={ref['d_nm']} nm, #phi={ref['phi']}"
 
+        phi_x_values = None
+        if scan_name == "phi":
+            phi_x_values = results.get("achieved_phi", results["area_fraction"])
+            annotation[0] = f"L={mc_cfg.get('L_um', ref['L_um'])} #mum, W={W_um} #mum"
+            annotation[1] = f"Target #phi: {', '.join([str(v) for v in values])}"
+        elif scan_name == "L_um":
+            annotation[0] = f"W={W_um} #mum, #phi={ref['phi']}"
+            annotation[1] = f"a={ref['a_nm']} nm, d={ref['d_nm']} nm"
+        elif scan_name == "d_nm":
+            annotation[0] = f"L={mc_cfg.get('L_um', ref['L_um'])} #mum, W={W_um} #mum"
+            annotation[1] = f"a={ref['a_nm']} nm, #phi={ref['phi']}"
+        elif scan_name == "a_nm":
+            annotation[0] = f"L={mc_cfg.get('L_um', ref['L_um'])} #mum, W={W_um} #mum"
+            annotation[1] = f"d={ref['d_nm']} nm, #phi={ref['phi']}"
+
+        achieved_phi_vals = results.get("achieved_phi", results["area_fraction"])
+        phi_text = format_phi_values(achieved_phi_vals)
+        if phi_text:
+            annotation.append(f"Achieved #phi (vol): {phi_text}")
+
         plot_scan_summary(
             scan_name,
             results["values"],
@@ -683,6 +809,7 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             results["ana_achieved"],
             plots_dir,
             annotation,
+            x_values=phi_x_values,
         )
 
         if scan_name == "a_nm":
@@ -690,6 +817,8 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
                 f"L={mc_cfg.get('L_um', ref['L_um'])} #mum, W={W_um} #mum",
                 f"d={ref['d_nm']} nm, #phi={ref['phi']}",
             ]
+            if phi_text:
+                core_annotation.append(f"Achieved #phi (vol): {phi_text}")
             plot_core_radius_mc_vs_ana(
                 results["values"],
                 results["mc_mean"],
@@ -711,6 +840,125 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
     print(f"\nScan summary written to: {summary_path}")
     sys.stdout.flush()
     return summary
+
+
+def regenerate_scan_plots_from_summary(summary_path, config_path=None):
+    """
+    Regenerate 2D scan plots from a previously saved summary JSON.
+    """
+    import ROOT
+    from ROOT import TCanvas, TLatex, TLegend, TGraph, TGraphErrors, gStyle
+
+    if not os.path.isfile(summary_path):
+        raise FileNotFoundError(f"Summary JSON not found: {summary_path}")
+
+    with open(summary_path, "r") as f:
+        summary = json.load(f)
+
+    ref = None
+    mc_cfg = {}
+    plots_dir = "plots/geometry"
+    if config_path is not None:
+        with open(config_path, "r") as f:
+            cfg = json.load(f)
+        ref = cfg.get("reference", None)
+        mc_cfg = cfg.get("montecarlo_2d", cfg.get("montecarlo", {}))
+        plots_dir = cfg.get("plots_dir", plots_dir)
+
+    ref = summary.get("reference", ref) or {}
+    mc_cfg_from_summary = summary.get("mc_cfg", {})
+
+    meta = summary.get("meta", {})
+    W_um = meta.get("W_um", mc_cfg_from_summary.get("W_um", mc_cfg.get("W_um", 10.0)))
+    n_rays = meta.get("n_rays", mc_cfg.get("n_rays", 10000))
+    L_um = mc_cfg_from_summary.get("L_um", mc_cfg.get("L_um", ref.get("L_um", 50.0)))
+
+    os.makedirs(plots_dir, exist_ok=True)
+    gStyle.SetOptStat(0)
+
+    scan_keys = ["phi", "d_nm", "a_nm", "L_um"]
+    for scan_name in scan_keys:
+        results = summary.get("scans", {}).get(scan_name, None)
+        if not results:
+            continue
+
+        values = results.get("values", [])
+        mc_mean = results.get("mc_mean", [])
+        mc_sem = results.get("mc_sem", [])
+        ana_target = results.get("ana_target", [])
+        ana_achieved = results.get("ana_achieved", [])
+
+        if not values:
+            continue
+
+        annotation = [
+            f"W={W_um} #mum, N_rays={n_rays}",
+            "",
+        ]
+
+        achieved_phi_vals = results.get("achieved_phi", results.get("area_fraction", []))
+        phi_text = format_phi_values(achieved_phi_vals)
+
+        if scan_name == "phi":
+            annotation[0] = f"L={L_um} #mum, W={W_um} #mum"
+            annotation[1] = f"Target #phi: {', '.join([str(v) for v in values])}"
+            x_values = achieved_phi_vals if achieved_phi_vals else values
+        elif scan_name == "L_um":
+            ref_phi = ref.get("phi", "n/a")
+            ref_a = ref.get("a_nm", "n/a")
+            ref_d = ref.get("d_nm", "n/a")
+            annotation[0] = f"W={W_um} #mum, #phi={ref_phi}"
+            annotation[1] = f"a={ref_a} nm, d={ref_d} nm"
+            x_values = None
+        elif scan_name == "d_nm":
+            ref_phi = ref.get("phi", "n/a")
+            ref_a = ref.get("a_nm", "n/a")
+            annotation[0] = f"L={L_um} #mum, W={W_um} #mum"
+            annotation[1] = f"a={ref_a} nm, #phi={ref_phi}"
+            x_values = None
+        elif scan_name == "a_nm":
+            ref_phi = ref.get("phi", "n/a")
+            ref_d = ref.get("d_nm", "n/a")
+            annotation[0] = f"L={L_um} #mum, W={W_um} #mum"
+            annotation[1] = f"d={ref_d} nm, #phi={ref_phi}"
+            x_values = None
+        else:
+            x_values = None
+
+        if phi_text:
+            annotation.append(f"Achieved #phi (vol): {phi_text}")
+
+        plot_scan_summary(
+            scan_name,
+            values,
+            mc_mean,
+            mc_sem,
+            ana_target,
+            ana_achieved,
+            plots_dir,
+            annotation,
+            x_values=x_values,
+        )
+
+        if scan_name == "a_nm":
+            core_annotation = [
+                f"L={L_um} #mum, W={W_um} #mum",
+                f"d={ref.get('d_nm', 'n/a')} nm, #phi={ref.get('phi', 'n/a')}",
+            ]
+            if phi_text:
+                core_annotation.append(f"Achieved #phi (vol): {phi_text}")
+            plot_core_radius_mc_vs_ana(
+                values,
+                mc_mean,
+                mc_sem,
+                ana_achieved,
+                plots_dir,
+                core_annotation,
+            )
+
+    print(f"Regenerated scan plots from summary: {summary_path}")
+    print(f"Output directory: {plots_dir}")
+    sys.stdout.flush()
 
 def run_montecarlo_2d(config_path=None):
     """
@@ -887,9 +1135,19 @@ def main():
                         help="Run parameter scans and summary plots")
     parser.add_argument("--scan-quick", action="store_true",
                         help="Run a reduced scan with fewer values/rays (debug timing)")
+    parser.add_argument("--plot-only", action="store_true",
+                        help="Regenerate scan plots from existing summary JSON (no MC run)")
+    parser.add_argument("--summary", default=None,
+                        help="Path to geometry_mc_2d_scan_summary.json for --plot-only")
     args = parser.parse_args()
-    
-    if args.scan:
+
+    if args.plot_only:
+        with open(args.config, "r") as f:
+            cfg = json.load(f)
+        output_dir = cfg.get("output_dir", "results/geometry")
+        summary_path = args.summary or os.path.join(output_dir, "geometry_mc_2d_scan_summary.json")
+        regenerate_scan_plots_from_summary(summary_path, args.config)
+    elif args.scan:
         with open(args.config, "r") as f:
             cfg = json.load(f)
         ref = cfg["reference"]
