@@ -17,7 +17,8 @@ import numpy as np
 from geometry_analytical import expected_crossings, expected_sphere_intersections, crossings_per_sphere
 
 
-def generate_sphere_positions(L_um, a_nm, d_nm, phi, xy_size_um, seed=None, max_attempts_per_sphere=10000):
+def generate_sphere_positions(L_um, a_nm, d_nm, phi, xy_size_um, seed=None,
+                              max_attempts_per_sphere=10000, method="rsa"):
     """
     Generate non-overlapping sphere positions in a slab using random sequential addition.
     
@@ -46,10 +47,55 @@ def generate_sphere_positions(L_um, a_nm, d_nm, phi, xy_size_um, seed=None, max_
     V_slab = xy_size_nm * xy_size_nm * L_nm
     V_sphere = (4.0 / 3.0) * np.pi * R_nm**3
     
+    method = (method or "rsa").lower()
+
     # Target number of spheres
     N_target = int(phi * V_slab / V_sphere)
-    print(f"  Target: {N_target} spheres for phi={phi}")
+    print(f"  Target: {N_target} spheres for phi={phi} (method={method})")
     
+    # Fast lattice-based packing (FCC) for faithful phi.
+    if method == "fcc":
+        phi_fcc = np.pi / (3.0 * np.sqrt(2.0))  # ~0.7405
+        phi_use = min(phi, phi_fcc)
+        if phi_use <= 0:
+            return np.array([]).reshape(0, 3), 0.0
+        if phi_use < phi:
+            print(f"  Warning: target phi {phi} > FCC max {phi_fcc:.4f}; using {phi_use:.4f}")
+
+        # FCC lattice constant a from target packing fraction.
+        # phi = 4 * (4/3*pi*R^3) / a^3
+        a = ((16.0 / 3.0) * np.pi * R_nm**3 / phi_use) ** (1.0 / 3.0)
+
+        nx = int(np.ceil(xy_size_nm / a))
+        ny = int(np.ceil(xy_size_nm / a))
+        nz = int(np.ceil(L_nm / a))
+
+        basis = [
+            (0.0, 0.0, 0.0),
+            (0.0, 0.5, 0.5),
+            (0.5, 0.0, 0.5),
+            (0.5, 0.5, 0.0),
+        ]
+
+        positions = []
+        for i in range(nx):
+            x0 = i * a
+            for j in range(ny):
+                y0 = j * a
+                for k in range(nz):
+                    z0 = k * a
+                    for bx, by, bz in basis:
+                        x = x0 + bx * a
+                        y = y0 + by * a
+                        z = z0 + bz * a
+                        if x < xy_size_nm and y < xy_size_nm and z < L_nm:
+                            positions.append((x, y, z))
+
+        positions = np.array(positions) if positions else np.array([]).reshape(0, 3)
+        actual_phi = len(positions) * V_sphere / V_slab
+        print(f"  FCC lattice: a={a:.2f} nm, placed {len(positions)} spheres, phi={actual_phi:.4f}")
+        return positions, actual_phi
+
     positions = []
     consecutive_failures = 0
     
@@ -60,7 +106,7 @@ def generate_sphere_positions(L_um, a_nm, d_nm, phi, xy_size_um, seed=None, max_
             # use periodic boundaries in x, y)
             x = np.random.uniform(0, xy_size_nm)
             y = np.random.uniform(0, xy_size_nm)
-            z = np.random.uniform(R_nm, L_nm - R_nm)
+            z = np.random.uniform(0.0, L_nm)
             
             # Check overlap with existing spheres (including periodic images in x, y)
             overlaps = False
@@ -185,7 +231,7 @@ def run_montecarlo(config_path=None):
     # Generate sphere positions
     print("Generating sphere positions...")
     positions, actual_phi = generate_sphere_positions(
-        L_um, a_nm, d_nm, phi, xy_size_um, seed=seed
+        L_um, a_nm, d_nm, phi, xy_size_um, seed=seed, method=mc_cfg.get("packing", "rsa")
     )
     print(f"Placed {len(positions)} spheres, actual phi = {actual_phi:.4f}")
     print()
@@ -273,7 +319,9 @@ def run_montecarlo(config_path=None):
         sys.stdout.flush()
         # Generate new sphere configuration
         pos, actual_p = generate_sphere_positions(
-            L_um, a_nm, d_nm, phi_val, xy_size_um, seed=seed + int(phi_val * 1000)
+            L_um, a_nm, d_nm, phi_val, xy_size_um,
+            seed=seed + int(phi_val * 1000),
+            method=mc_cfg.get("packing", "rsa"),
         )
         actual_phis.append(actual_p)
         
@@ -335,6 +383,81 @@ def run_montecarlo(config_path=None):
     c2.SaveAs(os.path.join(plots_dir, "analytical_vs_mc.pdf"))
     c2.SaveAs(os.path.join(plots_dir, "analytical_vs_mc.root"))
     print(f"Saved: {plots_dir}/analytical_vs_mc.pdf")
+
+    # Plot 3: Analytical vs MC for varying core radius a_nm
+    print("\nRunning a_nm scan for comparison plot...")
+    sys.stdout.flush()
+    a_scan = cfg["scan_ranges"]["a_nm"]
+    mc_means_a = []
+    mc_stds_a = []
+    analytical_values_a = []
+    actual_phis_a = []
+
+    for a_val in a_scan:
+        print(f"  a = {a_val} nm...")
+        sys.stdout.flush()
+        pos, actual_p = generate_sphere_positions(
+            L_um, a_val, d_nm, phi, xy_size_um,
+            seed=seed + int(a_val),
+            method=mc_cfg.get("packing", "rsa"),
+        )
+        actual_phis_a.append(actual_p)
+
+        n_scan_rays = min(500, n_rays)
+        crossings = []
+        for _ in range(n_scan_rays):
+            x_ray = np.random.uniform(0, xy_size_nm)
+            y_ray = np.random.uniform(0, xy_size_nm)
+            n_cross, _ = trace_ray(x_ray, y_ray, pos, L_nm, a_val, d_nm, xy_size_nm)
+            crossings.append(n_cross)
+
+        mc_means_a.append(np.mean(crossings))
+        mc_stds_a.append(np.std(crossings) / np.sqrt(n_scan_rays))
+        analytical_values_a.append(expected_crossings(L_um, a_val, d_nm, actual_p))
+        print(f"    MC={mc_means_a[-1]:.1f}, Ana={analytical_values_a[-1]:.1f}, phi={actual_p:.3f}")
+        sys.stdout.flush()
+
+    c3 = TCanvas("c_comparison_a", "Analytical vs MC (core radius)", 800, 600)
+    c3.SetGrid()
+
+    n_pts_a = len(a_scan)
+    gr_mc_a = TGraphErrors(n_pts_a,
+                           array.array('d', a_scan),
+                           array.array('d', mc_means_a),
+                           array.array('d', [0.0] * n_pts_a),
+                           array.array('d', mc_stds_a))
+    gr_mc_a.SetMarkerStyle(20)
+    gr_mc_a.SetMarkerSize(1.2)
+    gr_mc_a.SetMarkerColor(4)
+    gr_mc_a.SetLineColor(4)
+    gr_mc_a.SetLineWidth(2)
+
+    gr_ana_a = TGraph(n_pts_a,
+                      array.array('d', a_scan),
+                      array.array('d', analytical_values_a))
+    gr_ana_a.SetMarkerStyle(22)
+    gr_ana_a.SetMarkerSize(1.2)
+    gr_ana_a.SetMarkerColor(2)
+    gr_ana_a.SetLineColor(2)
+    gr_ana_a.SetLineWidth(2)
+    gr_ana_a.SetLineStyle(2)
+
+    gr_mc_a.SetTitle("Analytical vs Monte Carlo;Core radius a (nm);Shell crossings")
+    gr_mc_a.Draw("APL")
+    gr_ana_a.Draw("PL SAME")
+
+    leg3 = TLegend(0.15, 0.75, 0.45, 0.88)
+    leg3.SetBorderSize(1)
+    leg3.SetFillStyle(0)
+    leg3.AddEntry(gr_mc_a, "Monte Carlo", "lpe")
+    leg3.AddEntry(gr_ana_a, "Analytical (actual #phi)", "lp")
+    leg3.Draw()
+
+    lat.DrawLatex(0.55, 0.85, f"L={L_um} #mum, d={d_nm} nm, #phi={phi}")
+    c3.Update()
+    c3.SaveAs(os.path.join(plots_dir, "crossings_vs_core_radius_mc_vs_ana.pdf"))
+    c3.SaveAs(os.path.join(plots_dir, "crossings_vs_core_radius_mc_vs_ana.root"))
+    print(f"Saved: {plots_dir}/crossings_vs_core_radius_mc_vs_ana.pdf")
     
     # Write summary
     summary_path = os.path.join(output_dir, "geometry_mc_summary.txt")

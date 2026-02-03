@@ -321,7 +321,7 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
     left_margin = 0.12
     right_margin = 0.06
     bottom_margin = 0.12
-    top_margin = 0.22
+    top_margin = 0.28
 
     width = 900
     drawable_w = width * (1.0 - left_margin - right_margin)
@@ -379,11 +379,12 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
             inner.Draw()
             ellipses.append(inner)
 
-    text = TPaveText(0.20, 0.82, 0.80, 0.98, "NDC")
+    text = TPaveText(0.15, 0.80, 0.85, 0.98, "NDC")
     text.SetFillColor(0)
     text.SetBorderSize(1)
     text.SetTextAlign(12)
-    text.SetTextSize(0.03)
+    text.SetTextSize(0.028)
+    text.SetTextFont(42)
     text.AddText(title)
     text.AddText(params_text)
     if n_show < n_total:
@@ -465,6 +466,55 @@ def plot_scan_summary(scan_name, values, mc_mean, mc_sem, ana_target, ana_achiev
     c.SaveAs(out_base + ".pdf")
     c.SaveAs(out_base + ".root")
 
+
+def plot_core_radius_mc_vs_ana(values, mc_mean, mc_sem, ana_achieved, plots_dir, annotation_lines):
+    import ROOT
+    from ROOT import TCanvas, TGraphErrors, TGraph, TLatex, TLegend, gStyle
+
+    gStyle.SetOptStat(0)
+    n = len(values)
+    if n == 0:
+        return
+
+    gr_mc = TGraphErrors(n)
+    gr_ana = TGraph(n)
+    for i, x in enumerate(values):
+        gr_mc.SetPoint(i, float(x), float(mc_mean[i]))
+        gr_mc.SetPointError(i, 0.0, float(mc_sem[i]))
+        gr_ana.SetPoint(i, float(x), float(ana_achieved[i]))
+
+    c = TCanvas("c_core_radius_mc_vs_ana_2d", "Core radius MC vs analytical (2D)", 800, 600)
+    c.SetGrid()
+    gr_mc.SetTitle("Core radius scan (2D MC vs analytical);Core radius a (nm);Shell crossings")
+    gr_mc.SetMarkerStyle(20)
+    gr_mc.SetMarkerSize(1.1)
+    gr_mc.SetLineWidth(2)
+    gr_mc.Draw("AP")
+
+    gr_ana.SetLineColor(ROOT.kRed + 1)
+    gr_ana.SetLineStyle(2)
+    gr_ana.SetLineWidth(2)
+    gr_ana.Draw("L SAME")
+
+    leg = TLegend(0.15, 0.75, 0.45, 0.88)
+    leg.SetBorderSize(1)
+    leg.SetFillStyle(0)
+    leg.AddEntry(gr_mc, "2D MC mean (SEM)", "lpe")
+    leg.AddEntry(gr_ana, "Analytical (achieved #phi)", "l")
+    leg.Draw()
+
+    lat = TLatex()
+    lat.SetNDC()
+    lat.SetTextSize(0.03)
+    y = 0.70
+    for line in annotation_lines:
+        lat.DrawLatex(0.55, y, line)
+        y -= 0.04
+
+    out_base = os.path.join(plots_dir, "crossings_vs_core_radius_mc_vs_ana_2d")
+    c.Update()
+    c.SaveAs(out_base + ".pdf")
+    c.SaveAs(out_base + ".root")
 
 def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False):
     scan_ranges = cfg.get("scan_ranges", {})
@@ -634,6 +684,20 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             plots_dir,
             annotation,
         )
+
+        if scan_name == "a_nm":
+            core_annotation = [
+                f"L={mc_cfg.get('L_um', ref['L_um'])} #mum, W={W_um} #mum",
+                f"d={ref['d_nm']} nm, #phi={ref['phi']}",
+            ]
+            plot_core_radius_mc_vs_ana(
+                results["values"],
+                results["mc_mean"],
+                results["mc_sem"],
+                results["ana_achieved"],
+                plots_dir,
+                core_annotation,
+            )
 
         scan_index += 1
 
