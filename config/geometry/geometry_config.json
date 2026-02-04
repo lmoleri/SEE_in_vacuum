@@ -22,7 +22,8 @@
     "W_um": 2.0,
     "n_rays": 2000,
     "seed": 42,
-    "scan_slice_plots": "all"
+    "scan_slice_plots": "all",
+    "combo_L_scan": true
   },
   "output_dir": "results/geometry",
   "plots_dir": "plots/geometry"

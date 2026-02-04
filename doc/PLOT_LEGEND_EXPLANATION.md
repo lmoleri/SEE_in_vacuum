@@ -61,3 +61,13 @@ The plot shows a **Check: fraction with SEE** box with two numbers:
 - **Actual (MC)**: Fraction of Monte Carlo events for which the sampled \(N_{\rm SE} \ge 1\).
 
 Expected and Actual are directly comparable and should agree within MC sampling noise. See [MUON_SEY_MONTE_CARLO.md](MUON_SEY_MONTE_CARLO.md) for the formula and derivation.
+
+Implementation details (plain text):
+Step 1: Find which histogram bin contains E=0. The fraction with Edep > 0 is
+fraction_with_edep = (integral_total - content_zero_bin) / integral_total.
+Step 2: For each bin i with center E_i and content n_i, compute
+mu_i = (E_i / epsilon) * P_esc and P(>=1 SE | E_i) = 1 - exp(-mu_i).
+Step 3: Expected fraction with SEE (all bins) is
+expected_fraction_with_SEE = sum over all bins of (n_i / N_total) * P(>=1 SE | E_i).
+This includes the zero bin, so it is directly comparable to the MC fraction.
+Step 4: Actual (MC) fraction is the fraction of events with sampled N_SE >= 1.

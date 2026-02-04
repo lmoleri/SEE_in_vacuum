@@ -90,6 +90,219 @@ def analytical_formula_lines():
     ]
 
 
+def plot_combo_L_scan(combo_summary, plots_dir):
+    """
+    Plot MC-only crossings vs L for each (a, phi) combination.
+    """
+    import ROOT
+    from ROOT import TCanvas, TGraphErrors, TLegend, TPaveText, TLatex, gStyle
+
+    gStyle.SetOptStat(0)
+
+    a_values = combo_summary.get("a_values", [])
+    phi_values = combo_summary.get("phi_values", [])
+    L_values = combo_summary.get("L_values", [])
+    results = combo_summary.get("results", [])
+    meta = combo_summary.get("meta", {})
+
+    if not (a_values and phi_values and L_values and results):
+        return
+
+    c = TCanvas("c_combo_L_scan", "2D MC crossings vs L by a and phi", 1000, 650)
+    c.SetGrid()
+    c.SetRightMargin(0.38)
+    c.SetTopMargin(0.12)
+
+    # Color per a, marker per phi
+    color_list = [
+        ROOT.kBlue + 1,
+        ROOT.kRed + 1,
+        ROOT.kGreen + 2,
+        ROOT.kMagenta + 1,
+        ROOT.kOrange + 1,
+        ROOT.kCyan + 1,
+        ROOT.kBlack,
+    ]
+    marker_list = [20, 21, 22, 23, 33, 34, 29, 47]
+
+    graphs = []
+    first = True
+    y_max = 0.0
+
+    # Build a lookup for results
+    res_map = {}
+    for item in results:
+        key = (item["a_nm"], item["phi"])
+        res_map[key] = item
+
+    for ai, a_nm in enumerate(a_values):
+        for pi, phi in enumerate(phi_values):
+            key = (a_nm, phi)
+            if key not in res_map:
+                continue
+            item = res_map[key]
+            mc_mean = item.get("mc_mean", [])
+            mc_std = item.get("mc_std", [])
+
+            n = min(len(L_values), len(mc_mean), len(mc_std))
+            if n == 0:
+                continue
+
+            gr = TGraphErrors(n)
+            for i in range(n):
+                y_val = float(mc_mean[i])
+                y_err = float(mc_std[i])
+                gr.SetPoint(i, float(L_values[i]), y_val)
+                gr.SetPointError(i, 0.0, y_err)
+                y_max = max(y_max, y_val + y_err)
+
+            color = color_list[ai % len(color_list)]
+            marker = marker_list[pi % len(marker_list)]
+            gr.SetLineColor(color)
+            gr.SetMarkerColor(color)
+            gr.SetMarkerStyle(marker)
+            gr.SetMarkerSize(1.2)
+            gr.SetLineWidth(0)
+
+            if first:
+                gr.SetTitle("2D MC crossings vs slab thickness;Slab thickness L (#mum);Mean shell crossings")
+                gr.Draw("AP")
+                first = False
+            else:
+                gr.Draw("P SAME")
+
+            graphs.append(gr)
+
+    # Expand y-range to avoid clipping at top.
+    if y_max > 0:
+        gr0 = graphs[0] if graphs else None
+        if gr0:
+            gr0.SetMaximum(y_max * 1.10)
+
+    # Legend for a (colors)
+    leg_a = TLegend(0.70, 0.75, 0.84, 0.93)
+    leg_a.SetBorderSize(0)
+    leg_a.SetFillStyle(0)
+    leg_a.SetTextSize(0.025)
+    leg_a.SetHeader("a (nm)", "C")
+
+    dummy_graphs = []
+    for ai, a_nm in enumerate(a_values):
+        color = color_list[ai % len(color_list)]
+        g = TGraphErrors(1)
+        g.SetLineColor(color)
+        g.SetMarkerColor(color)
+        g.SetMarkerStyle(marker_list[0])
+        g.SetMarkerSize(1.2)
+        g.SetLineWidth(0)
+        dummy_graphs.append(g)
+        leg_a.AddEntry(g, f"{a_nm:g}", "p")
+    leg_a.Draw()
+
+    # Legend for phi (markers)
+    leg_phi = TLegend(0.84, 0.75, 0.98, 0.93)
+    leg_phi.SetBorderSize(0)
+    leg_phi.SetFillStyle(0)
+    leg_phi.SetTextSize(0.025)
+    leg_phi.SetHeader("#phi (marker)", "C")
+    for pi, phi in enumerate(phi_values):
+        g = TGraphErrors(1)
+        g.SetLineColor(ROOT.kBlack)
+        g.SetMarkerColor(ROOT.kBlack)
+        g.SetMarkerStyle(marker_list[pi % len(marker_list)])
+        g.SetMarkerSize(1.2)
+        g.SetLineWidth(0)
+        dummy_graphs.append(g)
+        leg_phi.AddEntry(g, f"{phi:g}", "p")
+    leg_phi.Draw()
+
+    # Meta text
+    meta_box = TPaveText(0.70, 0.52, 0.98, 0.69, "NDC")
+    meta_box.SetFillColor(0)
+    meta_box.SetBorderSize(1)
+    meta_box.SetTextAlign(12)
+    meta_box.SetTextSize(0.024)
+    if meta.get("W_um") is not None:
+        meta_box.AddText(f"W={meta['W_um']} #mum")
+    if meta.get("d_nm") is not None:
+        meta_box.AddText(f"d={meta['d_nm']} nm")
+    if meta.get("n_rays") is not None:
+        meta_box.AddText(f"MC events={meta['n_rays']}")
+    meta_box.Draw()
+
+    out_base = os.path.join(plots_dir, "mc_2d_scan_L_um_by_a_phi")
+    c.Update()
+    c.SaveAs(out_base + ".pdf")
+    c.SaveAs(out_base + ".root")
+
+    # Zoomed version for y in [200, 300]
+    if graphs:
+        graphs[0].SetMinimum(200.0)
+        graphs[0].SetMaximum(300.0)
+
+        # Table of parameter combinations in zoomed plot (boxed cells).
+        x0, y0, x1, y1 = 0.70, 0.24, 0.98, 0.42
+        n_cols = len(phi_values) + 1  # header column for a
+        n_rows = len(a_values) + 1    # header row for phi
+        if n_cols > 1 and n_rows > 1:
+            dx = (x1 - x0) / n_cols
+            dy = (y1 - y0) / n_rows
+
+            # Visible combinations in zoom range.
+            visible_combo = {}
+            for item in results:
+                a_nm = item.get("a_nm")
+                phi = item.get("phi")
+                if a_nm is None or phi is None:
+                    continue
+                mc_mean = item.get("mc_mean", [])
+                visible_L = []
+                for idx, y_val in enumerate(mc_mean):
+                    if 200.0 <= y_val <= 300.0 and idx < len(L_values):
+                        visible_L.append(L_values[idx])
+                if visible_L:
+                    visible_combo[(a_nm, phi)] = visible_L
+
+            # Draw cell boxes with TPaveText so borders are visible.
+            cell_text_size = 0.018
+            cell_paves = []
+            for i in range(n_rows):
+                for j in range(n_cols):
+                    x_left = x0 + dx * j
+                    x_right = x0 + dx * (j + 1)
+                    y_top = y1 - dy * i
+                    y_bottom = y1 - dy * (i + 1)
+                    cell = TPaveText(x_left, y_bottom, x_right, y_top, "NDC")
+                    cell.SetFillStyle(0)
+                    cell.SetBorderSize(1)
+                    cell.SetTextAlign(22)
+                    cell.SetTextSize(cell_text_size)
+
+                    if i == 0 and j == 0:
+                        pass
+                    elif i == 0:
+                        phi = phi_values[j - 1]
+                        cell.AddText(f"#phi={phi:g}")
+                    elif j == 0:
+                        a_nm = a_values[i - 1]
+                        cell.AddText(f"a={a_nm:g}")
+                    else:
+                        a_nm = a_values[i - 1]
+                        phi = phi_values[j - 1]
+                        if (a_nm, phi) in visible_combo:
+                            l_vals = visible_combo[(a_nm, phi)]
+                            l_text = ",".join([f"{v:g}" for v in l_vals])
+                            cell.AddText(l_text)
+                    cell.Draw()
+                    cell_paves.append(cell)
+            # Keep references alive so ROOT doesn't garbage-collect them
+            c._combo_table_cells = cell_paves
+
+        c.Update()
+        c.SaveAs(out_base + "_zoom_200_300.pdf")
+        c.SaveAs(out_base + "_zoom_200_300.root")
+
+
 def select_plot_indices(n_values, mode):
     """
     Select which indices to plot in a scan.
@@ -800,7 +1013,7 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
         summary["scans"][scan_name] = results
 
         annotation = [
-            f"W={W_um} #mum, N_rays={n_rays}",
+            f"W={W_um} #mum, MC events={n_rays}",
             f"a={ref['a_nm']} nm, d={ref['d_nm']} nm, #phi={ref['phi']}",
         ]
         if scan_name == "a_nm":
@@ -811,6 +1024,7 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             annotation = [
                 f"L={mc_cfg.get('L_um', ref['L_um'])} #mum",
                 f"W={W_um} #mum",
+                f"MC events={n_rays}",
             ]
         elif scan_name == "L_um":
             annotation[1] = f"a={ref['a_nm']} nm, d={ref['d_nm']} nm, #phi={ref['phi']}"
@@ -821,6 +1035,7 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             annotation = [
                 f"L={mc_cfg.get('L_um', ref['L_um'])} #mum",
                 f"W={W_um} #mum",
+                f"MC events={n_rays}",
             ]
             annotation.extend(
                 format_value_block(
@@ -884,6 +1099,7 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
             core_annotation = [
                 f"L={mc_cfg.get('L_um', ref['L_um'])} #mum, W={W_um} #mum",
                 f"d={ref['d_nm']} nm, #phi={ref['phi']}",
+                f"MC events={n_rays}",
             ]
             if phi_lines:
                 core_annotation.extend(phi_lines)
@@ -899,6 +1115,14 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
 
         scan_index += 1
 
+    # Optional combo scan: MC-only curves vs L for each (a, phi) combination.
+    if mc_cfg.get("combo_L_scan", False):
+        print("\n[Scan] Running combo L scan by a and phi (MC-only)...")
+        sys.stdout.flush()
+        combo_summary = run_combo_L_scan(cfg, ref, mc_cfg, plots_dir, quick=quick)
+        if combo_summary:
+            summary["combo_L_scan"] = combo_summary
+
     t_scan_end = time.perf_counter()
     print(f"\n[Scan] Total time: {format_seconds(t_scan_end - t_scan_start)}")
     sys.stdout.flush()
@@ -909,6 +1133,77 @@ def run_montecarlo_2d_scan(cfg, ref, mc_cfg, plots_dir, output_dir, quick=False)
     print(f"\nScan summary written to: {summary_path}")
     sys.stdout.flush()
     return summary
+
+
+def run_combo_L_scan(cfg, ref, mc_cfg, plots_dir, quick=False):
+    """
+    MC-only scan: crossings vs L for each (a, phi) combination.
+    """
+    scan_ranges = cfg.get("scan_ranges", {})
+    if not scan_ranges:
+        return None
+
+    a_values = scan_ranges.get("a_nm", [ref["a_nm"]])
+    phi_values = scan_ranges.get("phi", [ref["phi"]])
+    L_values = scan_ranges.get("L_um", [ref["L_um"]])
+
+    if quick and len(L_values) > 2:
+        L_values = L_values[:2]
+
+    W_um = mc_cfg.get("W_um", 10.0)
+    n_rays = mc_cfg.get("n_rays", 2000)
+    seed_base = mc_cfg.get("seed", 42) + 70000
+    d_nm = ref["d_nm"]
+
+    results = []
+    combo_index = 0
+
+    for a_nm in a_values:
+        for phi in phi_values:
+            mc_mean = []
+            mc_std = []
+            achieved_phi = []
+            n_circles = []
+
+            for li, L_um in enumerate(L_values):
+                seed_case = seed_base + combo_index * 1000 + li * 7
+                circles, phi_ach = generate_circles_2d(
+                    L_um, W_um, float(a_nm), d_nm, float(phi), seed=seed_case
+                )
+                crossings_arr, _ = trace_rays_2d(
+                    circles, W_um * 1000.0, n_rays, seed_case + 1
+                )
+                mc_mean.append(float(np.mean(crossings_arr)))
+                mc_std.append(float(np.std(crossings_arr)))
+                achieved_phi.append(float(phi_ach))
+                n_circles.append(int(len(circles)))
+
+            results.append(
+                {
+                    "a_nm": float(a_nm),
+                    "phi": float(phi),
+                    "mc_mean": mc_mean,
+                    "mc_std": mc_std,
+                    "achieved_phi": achieved_phi,
+                    "n_circles": n_circles,
+                }
+            )
+            combo_index += 1
+
+    combo_summary = {
+        "a_values": [float(v) for v in a_values],
+        "phi_values": [float(v) for v in phi_values],
+        "L_values": [float(v) for v in L_values],
+        "results": results,
+        "meta": {
+            "W_um": W_um,
+            "d_nm": d_nm,
+            "n_rays": n_rays,
+        },
+    }
+
+    plot_combo_L_scan(combo_summary, plots_dir)
+    return combo_summary
 
 
 def regenerate_scan_plots_from_summary(summary_path, config_path=None):
@@ -961,7 +1256,7 @@ def regenerate_scan_plots_from_summary(summary_path, config_path=None):
             continue
 
         annotation = [
-            f"W={W_um} #mum, N_rays={n_rays}",
+            f"W={W_um} #mum, MC events={n_rays}",
             "",
         ]
 
@@ -990,6 +1285,7 @@ def regenerate_scan_plots_from_summary(summary_path, config_path=None):
             annotation = [
                 f"L={L_um} #mum",
                 f"W={W_um} #mum",
+                f"MC events={n_rays}",
             ]
             annotation.extend(
                 format_value_block(
@@ -1045,6 +1341,7 @@ def regenerate_scan_plots_from_summary(summary_path, config_path=None):
             core_annotation = [
                 f"L={L_um} #mum, W={W_um} #mum",
                 f"d={ref.get('d_nm', 'n/a')} nm, #phi={ref.get('phi', 'n/a')}",
+                f"MC events={n_rays}",
             ]
             if phi_lines:
                 core_annotation.extend(phi_lines)
@@ -1057,6 +1354,11 @@ def regenerate_scan_plots_from_summary(summary_path, config_path=None):
                 plots_dir,
                 core_annotation,
             )
+
+    # If combo summary exists, regenerate MC-only combo plot.
+    combo_summary = summary.get("combo_L_scan")
+    if combo_summary:
+        plot_combo_L_scan(combo_summary, plots_dir)
 
     print(f"Regenerated scan plots from summary: {summary_path}")
     print(f"Output directory: {plots_dir}")
@@ -1237,6 +1539,8 @@ def main():
                         help="Run parameter scans and summary plots")
     parser.add_argument("--scan-quick", action="store_true",
                         help="Run a reduced scan with fewer values/rays (debug timing)")
+    parser.add_argument("--combo-L-scan", action="store_true",
+                        help="Run MC-only L scan for each (a, phi) combination")
     parser.add_argument("--plot-only", action="store_true",
                         help="Regenerate scan plots from existing summary JSON (no MC run)")
     parser.add_argument("--summary", default=None,
@@ -1249,6 +1553,26 @@ def main():
         output_dir = cfg.get("output_dir", "results/geometry")
         summary_path = args.summary or os.path.join(output_dir, "geometry_mc_2d_scan_summary.json")
         regenerate_scan_plots_from_summary(summary_path, args.config)
+    elif args.combo_L_scan:
+        with open(args.config, "r") as f:
+            cfg = json.load(f)
+        ref = cfg["reference"]
+        mc_cfg = cfg.get("montecarlo_2d", cfg.get("montecarlo", {}))
+        plots_dir = cfg.get("plots_dir", "plots/geometry")
+        output_dir = cfg.get("output_dir", "results/geometry")
+        os.makedirs(plots_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
+
+        combo_summary = run_combo_L_scan(cfg, ref, mc_cfg, plots_dir, quick=args.scan_quick)
+
+        summary_path = os.path.join(output_dir, "geometry_mc_2d_scan_summary.json")
+        summary = {}
+        if os.path.isfile(summary_path):
+            with open(summary_path, "r") as f:
+                summary = json.load(f)
+        summary["combo_L_scan"] = combo_summary
+        with open(summary_path, "w") as f:
+            json.dump(summary, f, indent=2)
     elif args.scan:
         with open(args.config, "r") as f:
             cfg = json.load(f)
