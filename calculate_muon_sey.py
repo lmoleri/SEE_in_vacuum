@@ -32,6 +32,52 @@ Z_DEPTH = 25.0  # Å - production depth (2.5 nm = 25 Å)
 P_ESC = B * exp(-ALPHA * Z_DEPTH)
 
 
+def dionne_depth_nm(energy_ev, A, n):
+    """Dionne Eq. 5 penetration depth in nm: d = E^n / A^n."""
+    if energy_ev <= 0 or A <= 0:
+        return 0.0
+    return (energy_ev ** n) / (A ** n)
+
+
+def compute_escape_probability(depth_model, B_val, alpha_val, depth_val,
+                               energy_ev=None, dionne_A=None, dionne_n=None, dionne_d_scale=10.0):
+    """
+    Compute escape probability P_esc based on selected depth model.
+
+    depth_model:
+      - fixed: P_esc = B * exp(-alpha * depth)
+      - dionne-exp: assume exponential depth distribution with mean d(E) from Dionne.
+        Then <exp(-alpha z)> = 1 / (1 + alpha * d).
+    alpha_val is expected in 1/Å, depth in Å. If dionne_d_scale=10, d(E) in nm
+    is converted to Å.
+    """
+    meta = {
+        "depth_model": depth_model,
+        "alpha": alpha_val,
+        "B": B_val,
+    }
+    if depth_model == "dionne-exp":
+        if energy_ev is None or dionne_A is None or dionne_n is None:
+            raise ValueError("dionne-exp requires energy_ev, dionne_A, and dionne_n")
+        d_nm = dionne_depth_nm(energy_ev, dionne_A, dionne_n)
+        d_eff = d_nm * dionne_d_scale  # convert to Å if scale=10
+        p_esc = B_val / (1.0 + alpha_val * d_eff) if d_eff > 0 else B_val
+        meta.update({
+            "energy_ev": energy_ev,
+            "dionne_A": dionne_A,
+            "dionne_n": dionne_n,
+            "dionne_d_nm": d_nm,
+            "dionne_d_eff": d_eff,
+            "dionne_d_scale": dionne_d_scale,
+        })
+        return p_esc, meta
+    # fixed depth (default)
+    p_esc = B_val * exp(-alpha_val * depth_val)
+    meta.update({
+        "depth_val": depth_val,
+    })
+    return p_esc, meta
+
 def poisson_cdf(k, mu):
     """
     Calculate cumulative distribution function for Poisson distribution.
@@ -87,7 +133,8 @@ def sample_poisson(mu, random_gen=None):
     return int(random_gen.Poisson(mu))
 
 
-def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling=True):
+def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling=True,
+                              p_esc_override=None, p_esc_meta=None):
     """
     Calculate secondary electron yield using Monte Carlo method.
     
@@ -127,8 +174,14 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
     print(f"  ε (energy per free electron) = {EPSILON:.1f} eV")
     print(f"  B (surface escape prob) = {B:.2f}")
     print(f"  α (attenuation coeff) = {ALPHA:.4f} Å^-1")
-    print(f"  z (production depth) = {Z_DEPTH:.1f} Å ({Z_DEPTH/10:.1f} nm)")
-    print(f"  P_esc(z) = {P_ESC:.4f}")
+    p_esc = P_ESC if p_esc_override is None else p_esc_override
+    if p_esc_meta and p_esc_meta.get("depth_model") == "dionne-exp":
+        print("  Depth model: exponential (Dionne d(E))")
+        print("  E_p = {:.1f} eV, d(E) = {:.3g} nm".format(
+            p_esc_meta.get("energy_ev", 0.0), p_esc_meta.get("dionne_d_nm", 0.0)))
+    else:
+        print(f"  z (production depth) = {Z_DEPTH:.1f} Å ({Z_DEPTH/10:.1f} nm)")
+    print(f"  P_esc = {p_esc:.4f}")
     print()
     
     # Track sampled Edep when Edep > threshold (for comparison with histogram)
@@ -155,7 +208,7 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
                 sampled_edep_when_positive.append(delta_E)
                 n_MC_edep_positive += 1
             # Poisson parameter: μ = (ΔE/ε) * P_esc (must apply P_esc)
-            mu = (delta_E / EPSILON) * P_ESC
+            mu = (delta_E / EPSILON) * p_esc
             # Sample from Poisson distribution (ROOT's Poisson; custom sample_poisson had a bug)
             N_SE_i = int(random_gen.Poisson(mu)) if mu > 0 else 0
             
@@ -193,7 +246,7 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
                 N_int = delta_E / EPSILON
                 
                 # Calculate Poisson parameter
-                mu = N_int * P_ESC
+                mu = N_int * p_esc
                 # Sample from Poisson distribution (use ROOT's Poisson)
                 N_SE_i = int(random_gen.Poisson(mu)) if mu > 0 else 0
                 
@@ -221,7 +274,7 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
     # Expected mean = average of mu over all events
     # We approximate this by: mean(ΔE) / ε * P_esc
     mean_edep = edep_hist.GetMean()
-    expected_mean = (mean_edep / EPSILON) * P_ESC
+    expected_mean = (mean_edep / EPSILON) * p_esc
     
     # Fraction of events with Edep > 0: exclude the bin that contains 0 (not bins with center > 0)
     integral_total = edep_hist.Integral()
@@ -247,7 +300,7 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
         if content <= 0:
             continue
         sum_edep_positive += center * content
-        mu_bin = (center / EPSILON) * P_ESC
+        mu_bin = (center / EPSILON) * p_esc
         p_at_least_one = 1.0 - exp(-mu_bin)
         sum_p_at_least_one_SE += content * p_at_least_one
     mean_edep_given_positive = (sum_edep_positive / integral_positive) if integral_positive > 0 else 0.0
@@ -262,7 +315,7 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
         content = edep_hist.GetBinContent(bin_i)
         if content <= 0:
             continue
-        mu_bin = (center / EPSILON) * P_ESC
+        mu_bin = (center / EPSILON) * p_esc
         p_at_least_one = (1.0 - exp(-mu_bin)) if center > 0 else 0.0
         expected_fraction_with_SEE += (content / integral_total) * p_at_least_one
     
@@ -293,11 +346,13 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
         'n_MC_edep_positive': n_MC_edep_positive,
         'n_MC_edep_positive_with_SE': n_MC_edep_positive_with_SE,
         'sampled_edep_debug': sampled_edep_debug if use_histogram_sampling else None,
+        'p_esc': p_esc,
+        'p_esc_meta': p_esc_meta,
     }
     # Consistency: ⟨N_SE⟩ = ⟨μ⟩ = ⟨ΔE⟩/ε * P_esc. From sampled Edep, expected mean must match mean SEY.
     if use_histogram_sampling and sampled_edep_debug:
         mean_sampled_edep = float(np.mean(sampled_edep_debug))
-        expected_mean_from_sampled = (mean_sampled_edep / EPSILON) * P_ESC
+        expected_mean_from_sampled = (mean_sampled_edep / EPSILON) * p_esc
         statistics['mean_sampled_edep'] = mean_sampled_edep
         statistics['expected_mean_from_sampled'] = expected_mean_from_sampled
         # Sanity: Mean SEY (MC) must equal Expected (from sampled Edep) up to statistics
@@ -309,7 +364,9 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
     return total_SE, per_event_SE, statistics
 
 
-def process_histogram_from_file(root_file_path, hist_name="EdepPrimary", seed=42, use_histogram_sampling=True):
+def process_histogram_from_file(root_file_path, hist_name="EdepPrimary", seed=42, use_histogram_sampling=True,
+                                depth_model="fixed", dionne_A=None, dionne_n=None, dionne_d_scale=10.0,
+                                energy_override_ev=None):
     """
     Process energy deposition histogram from ROOT file.
     
@@ -349,13 +406,42 @@ def process_histogram_from_file(root_file_path, hist_name="EdepPrimary", seed=42
     print(f"  RMS: {edep_hist.GetRMS():.2f} eV")
     print()
     
+    # Resolve primary energy (eV) from RunMeta if available
+    energy_ev = None
+    meta = root_file.Get("RunMeta")
+    if meta:
+        try:
+            meta.GetEntry(0)
+            energy_ev = float(meta.primaryEnergyMeV) * 1.0e6
+        except Exception:
+            energy_ev = None
+    if energy_override_ev is not None:
+        energy_ev = energy_override_ev
+
+    # Compute escape probability based on chosen depth model
+    try:
+        p_esc_val, p_esc_meta = compute_escape_probability(
+            depth_model,
+            B,
+            ALPHA,
+            Z_DEPTH,
+            energy_ev=energy_ev,
+            dionne_A=dionne_A,
+            dionne_n=dionne_n,
+            dionne_d_scale=dionne_d_scale,
+        )
+    except ValueError as exc:
+        print(f"Error computing escape probability: {exc}")
+        root_file.Close()
+        return None, None, None, None
+
     # Initialize random number generator
     random_gen = ROOT.TRandom3(seed)
     gRandom.SetSeed(seed)
     
     # Calculate SEY
     total_SE, per_event_SE, statistics = calculate_sey_monte_carlo(
-        edep_hist, random_gen, use_histogram_sampling)
+        edep_hist, random_gen, use_histogram_sampling, p_esc_override=p_esc_val, p_esc_meta=p_esc_meta)
     
     # Create output histograms: exactly one bin per integer (0, 1, 2, ...)
     max_SE = max(per_event_SE) if per_event_SE else 0
@@ -427,6 +513,19 @@ def process_histogram_from_file(root_file_path, hist_name="EdepPrimary", seed=42
     edep_hist.Write("EdepPrimary_original")  # Save original for reference
     
     # Create summary text
+    p_meta = statistics.get("p_esc_meta") or {}
+    depth_model = p_meta.get("depth_model", "fixed")
+    depth_info = ""
+    if depth_model == "dionne-exp":
+        depth_info = (
+            f"  Depth model: Dionne exponential (d = E^n / A^n)\n"
+            f"  E_p = {p_meta.get('energy_ev', 0.0):.1f} eV, "
+            f"d(E) = {p_meta.get('dionne_d_nm', 0.0):.3g} nm "
+            f"(scaled x{p_meta.get('dionne_d_scale', 1.0):.0f} -> {p_meta.get('dionne_d_eff', 0.0):.3g} Å)\n"
+        )
+    else:
+        depth_info = f"  Depth model: fixed, z = {Z_DEPTH:.1f} Å ({Z_DEPTH/10:.1f} nm)\n"
+
     summary_text = f"""
 Monte Carlo SEY Calculation Summary
 ===================================
@@ -437,8 +536,7 @@ Physical Parameters:
   ε (energy per free electron) = {EPSILON:.1f} eV
   B (surface escape prob) = {B:.2f}
   α (attenuation coeff) = {ALPHA:.4f} Å^-1
-  z (production depth) = {Z_DEPTH:.1f} Å ({Z_DEPTH/10:.1f} nm)
-  P_esc(z) = {P_ESC:.4f}
+{depth_info}  P_esc = {statistics.get('p_esc', P_ESC):.4f}
 
 Results:
   Total events processed: {statistics['n_events']}
@@ -657,14 +755,23 @@ def create_plot(sey_hist, statistics, input_file_path, n_int_hist=None):
         rbox.Draw()
         
         # Parameters: right box, just below the stat box (top-right)
-        pbox = TPaveText(0.58, 0.52, 0.88, 0.72, "NDC")
+        pbox = TPaveText(0.58, 0.50, 0.88, 0.74, "NDC")
         pbox.SetFillColor(0)
         pbox.SetBorderSize(1)
         pbox.SetTextAlign(12)
         pbox.SetTextSize(0.022)
         pbox.AddText("Parameters:")
-        pbox.AddText("P_{esc}(z) = %.4f" % P_ESC)
-        pbox.AddText("Production depth: z = %.1f nm" % (Z_DEPTH/10))
+        p_meta = statistics.get("p_esc_meta") or {}
+        depth_model = p_meta.get("depth_model", "fixed")
+        p_esc_val = statistics.get("p_esc", P_ESC)
+        pbox.AddText("P_{esc} = %.4f" % p_esc_val)
+        if depth_model == "dionne-exp":
+            pbox.AddText("Depth: Dionne exp")
+            pbox.AddText("E_p = %.0f eV" % p_meta.get("energy_ev", 0.0))
+            pbox.AddText("d(E)=%.2g nm" % p_meta.get("dionne_d_nm", 0.0))
+        else:
+            pbox.AddText("Depth: fixed")
+            pbox.AddText("z = %.2f nm" % (Z_DEPTH/10))
         pbox.AddText("Events: %d" % statistics['n_events'])
         pbox.Draw()
         
@@ -685,14 +792,20 @@ def create_plot(sey_hist, statistics, input_file_path, n_int_hist=None):
             rbox2.SetTextSize(0.022)
             rbox2.AddText("N_{int} = #DeltaE / #varepsilon  (#varepsilon = %.0f eV)" % EPSILON)
             rbox2.Draw()
-            pbox2 = TPaveText(0.58, 0.52, 0.88, 0.72, "NDC")
+            pbox2 = TPaveText(0.58, 0.50, 0.88, 0.74, "NDC")
             pbox2.SetFillColor(0)
             pbox2.SetBorderSize(1)
             pbox2.SetTextAlign(12)
             pbox2.SetTextSize(0.022)
             pbox2.AddText("Parameters:")
-            pbox2.AddText("P_{esc}(z) = %.4f" % P_ESC)
-            pbox2.AddText("Production depth: z = %.1f nm" % (Z_DEPTH/10))
+            pbox2.AddText("P_{esc} = %.4f" % p_esc_val)
+            if depth_model == "dionne-exp":
+                pbox2.AddText("Depth: Dionne exp")
+                pbox2.AddText("E_p = %.0f eV" % p_meta.get("energy_ev", 0.0))
+                pbox2.AddText("d(E)=%.2g nm" % p_meta.get("dionne_d_nm", 0.0))
+            else:
+                pbox2.AddText("Depth: fixed")
+                pbox2.AddText("z = %.2f nm" % (Z_DEPTH/10))
             pbox2.AddText("Events: %d" % statistics['n_events'])
             pbox2.Draw()
             c2.Update()
@@ -726,7 +839,13 @@ def load_toy_config(config_path):
         "epsilon": float(cfg.get("epsilon", EPSILON)),
         "B": float(cfg.get("B", B)),
         "alpha": float(cfg.get("alpha", ALPHA)),
+        "alpha_unit": cfg.get("alpha_unit", "angstrom"),
         "depth": float(cfg.get("depth", Z_DEPTH)),
+        "depth_model": cfg.get("depth_model", "fixed"),
+        "dionne_A": cfg.get("dionne_A"),
+        "dionne_n": cfg.get("dionne_n"),
+        "dionne_d_scale": cfg.get("dionne_d_scale"),
+        "energy_override_ev": cfg.get("energy_override_ev"),
         "bin_by_bin": bool(cfg.get("bin_by_bin", False)),
     }
 
@@ -743,7 +862,7 @@ def main():
     depth_default = Z_DEPTH
     
     parser = argparse.ArgumentParser(
-        description="Calculate Secondary Electron Yield from Muon Interactions using Monte Carlo method",
+        description="Calculate Secondary Electron Yield from Particle Interactions using Monte Carlo method",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example:
@@ -755,6 +874,15 @@ Example:
     
     parser.add_argument("input_file", nargs="?", default=None,
                        help="Input ROOT file from Geant4 simulation (optional if --config is used)")
+    parser.add_argument("--input-dir",
+                       default=None,
+                       help="Process all ROOT files in a directory (overrides input_file)")
+    parser.add_argument("--pattern",
+                       default="*.root",
+                       help="Glob pattern for --input-dir (default: *.root)")
+    parser.add_argument("--skip-existing",
+                       action="store_true",
+                       help="Skip files that already have _SEY_MonteCarlo.root output")
     parser.add_argument("--config", "-c", default=None,
                        help="Path to toy model config JSON (provides input_file, histogram, seed, epsilon, B, alpha, depth, bin_by_bin)")
     parser.add_argument("--histogram", "-H",
@@ -776,10 +904,34 @@ Example:
                        type=float,
                        default=None,
                        help=f"Attenuation coefficient in Å^-1 (default: {alpha_default} or from config)")
+    parser.add_argument("--alpha-unit",
+                       choices=["angstrom", "nm"],
+                       default=None,
+                       help="Units for --alpha. Use 'nm' if providing values in 1/nm (will convert to 1/Å).")
     parser.add_argument("--depth", "-d",
                        type=float,
                        default=None,
                        help=f"Production depth in Å (default: {depth_default}, i.e., {depth_default/10} nm, or from config)")
+    parser.add_argument("--depth-model",
+                       choices=["fixed", "dionne-exp"],
+                       default=None,
+                       help="Depth model for escape probability: fixed depth, or exponential with mean Dionne d(E).")
+    parser.add_argument("--dionne-A",
+                       type=float,
+                       default=None,
+                       help="Dionne A parameter (for d(E)=E^n/A^n) used in dionne-exp mode.")
+    parser.add_argument("--dionne-n",
+                       type=float,
+                       default=None,
+                       help="Dionne n parameter (for d(E)=E^n/A^n) used in dionne-exp mode.")
+    parser.add_argument("--dionne-d-scale",
+                       type=float,
+                       default=None,
+                       help="Scale factor to convert d(E) to Å (default: 10, assuming d(E) in nm).")
+    parser.add_argument("--energy-override-ev",
+                       type=float,
+                       default=None,
+                       help="Override primary energy in eV if RunMeta is missing.")
     parser.add_argument("--bin-by-bin",
                        action="store_true",
                        help="Process histogram bin-by-bin instead of sampling (overrides config if set)")
@@ -805,9 +957,94 @@ Example:
     input_file = args.input_file
     if input_file is None and cfg is not None:
         input_file = cfg.get("input_file")
-    if not input_file:
-        print("Error: No input ROOT file. Provide input_file as positional argument or in --config (edep_root_file / input_file).")
+
+    # Resolve other options: CLI overrides config, config overrides defaults
+    histogram = args.histogram if args.histogram is not None else (cfg.get("histogram") if cfg else "EdepPrimary")
+    seed = args.seed if args.seed is not None else (cfg.get("seed") if cfg else 42)
+    epsilon_val = args.epsilon if args.epsilon is not None else (cfg.get("epsilon") if cfg else EPSILON)
+    B_val = args.B if args.B is not None else (cfg.get("B") if cfg else B)
+    alpha_val = args.alpha if args.alpha is not None else (cfg.get("alpha") if cfg else ALPHA)
+    alpha_unit = args.alpha_unit if args.alpha_unit is not None else (cfg.get("alpha_unit") if cfg else "angstrom")
+    if alpha_unit == "nm":
+        alpha_val = alpha_val / 10.0
+    depth_val = args.depth if args.depth is not None else (cfg.get("depth") if cfg else Z_DEPTH)
+    depth_model = args.depth_model if args.depth_model is not None else (cfg.get("depth_model") if cfg else "fixed")
+    dionne_A = args.dionne_A if args.dionne_A is not None else (cfg.get("dionne_A") if cfg else None)
+    dionne_n = args.dionne_n if args.dionne_n is not None else (cfg.get("dionne_n") if cfg else None)
+    dionne_d_scale = args.dionne_d_scale if args.dionne_d_scale is not None else (cfg.get("dionne_d_scale") if cfg else None)
+    if dionne_d_scale is None:
+        dionne_d_scale = 10.0  # default: convert d(E) from nm to Å
+    energy_override_ev = args.energy_override_ev if args.energy_override_ev is not None else (cfg.get("energy_override_ev") if cfg else None)
+    bin_by_bin = args.bin_by_bin or (cfg.get("bin_by_bin") if cfg else False)
+
+    if depth_model == "dionne-exp" and (dionne_A is None or dionne_n is None):
+        print("Error: --depth-model dionne-exp requires --dionne-A and --dionne-n (or config values).")
         sys.exit(1)
+
+    p_esc_val = B_val * exp(-alpha_val * depth_val)
+
+    # Update module-level constants for use in functions
+    EPSILON = epsilon_val
+    B = B_val
+    ALPHA = alpha_val
+    Z_DEPTH = depth_val
+    P_ESC = p_esc_val
+
+    if args.input_dir:
+        # Process all ROOT files in the directory
+        input_dir = args.input_dir
+        if not os.path.isdir(input_dir):
+            print(f"Error: Input directory not found: {input_dir}")
+            sys.exit(1)
+
+        from glob import glob
+        pattern = os.path.join(input_dir, args.pattern)
+        candidates = sorted(glob(pattern))
+        files = []
+        for path in candidates:
+            if not path.endswith(".root"):
+                continue
+            if "_SEY_MonteCarlo" in os.path.basename(path):
+                continue
+            if os.path.basename(path).startswith("summary"):
+                continue
+            out_path = path.replace(".root", "_SEY_MonteCarlo.root")
+            if args.skip_existing and os.path.exists(out_path):
+                continue
+            files.append(path)
+
+        if not files:
+            print(f"No ROOT files to process in {input_dir} (pattern: {args.pattern}).")
+            sys.exit(1)
+
+        print("=" * 70)
+        print("Monte Carlo SEY Calculation (batch)")
+        print("=" * 70)
+        print(f"Input dir: {input_dir}")
+        print(f"Files: {len(files)}")
+        print()
+
+        for idx, path in enumerate(files, 1):
+            print(f"[{idx}/{len(files)}] {path}")
+            result = process_histogram_from_file(
+                path,
+                histogram,
+                seed,
+                use_histogram_sampling=not bin_by_bin,
+                depth_model=depth_model,
+                dionne_A=dionne_A,
+                dionne_n=dionne_n,
+                dionne_d_scale=dionne_d_scale,
+                energy_override_ev=energy_override_ev,
+            )
+            if result[0] is None:
+                print(f"  Failed to process: {path}")
+        sys.exit(0)
+
+    if not input_file:
+        print("Error: No input ROOT file. Provide input_file as positional argument or in --config (edep_root_file / input_file), or use --input-dir.")
+        sys.exit(1)
+
     # If path is relative and we have a config file, resolve relative to project root (config may be in config/toy_model/ or config/geant4/)
     if not os.path.isabs(input_file) and args.config and os.path.isfile(args.config):
         base = os.path.dirname(os.path.abspath(args.config))
@@ -815,26 +1052,8 @@ Example:
             base = os.path.dirname(base)
         input_file = os.path.normpath(os.path.join(base, input_file))
     
-    # Resolve other options: CLI overrides config, config overrides defaults
-    histogram = args.histogram if args.histogram is not None else (cfg.get("histogram") if cfg else "EdepPrimary")
-    seed = args.seed if args.seed is not None else (cfg.get("seed") if cfg else 42)
-    epsilon_val = args.epsilon if args.epsilon is not None else (cfg.get("epsilon") if cfg else EPSILON)
-    B_val = args.B if args.B is not None else (cfg.get("B") if cfg else B)
-    alpha_val = args.alpha if args.alpha is not None else (cfg.get("alpha") if cfg else ALPHA)
-    depth_val = args.depth if args.depth is not None else (cfg.get("depth") if cfg else Z_DEPTH)
-    bin_by_bin = args.bin_by_bin or (cfg.get("bin_by_bin") if cfg else False)
-    
-    p_esc_val = B_val * exp(-alpha_val * depth_val)
-    
-    # Update module-level constants for use in functions
-    EPSILON = epsilon_val
-    B = B_val
-    ALPHA = alpha_val
-    Z_DEPTH = depth_val
-    P_ESC = p_esc_val
-    
     print("=" * 70)
-    print("Monte Carlo SEY Calculation for Muon Interactions")
+    print("Monte Carlo SEY Calculation for Particle Interactions")
     print("=" * 70)
     if args.config:
         print("Config file: {}".format(args.config))
@@ -843,7 +1062,16 @@ Example:
     # Process file
     use_sampling = not bin_by_bin
     result = process_histogram_from_file(
-        input_file, histogram, seed, use_sampling)
+        input_file,
+        histogram,
+        seed,
+        use_sampling,
+        depth_model=depth_model,
+        dionne_A=dionne_A,
+        dionne_n=dionne_n,
+        dionne_d_scale=dionne_d_scale,
+        energy_override_ev=energy_override_ev,
+    )
     
     if result[0] is not None:
         total_SE, per_event_SE, statistics, output_file = result
