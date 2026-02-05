@@ -130,6 +130,8 @@ root -l draw_histo.C
 When run on scan outputs, canvases are also exported to `plots/` as `.root` and `.pdf`,
 mirroring the `results/` subfolder structure.
 
+Note: `plots/` and `results/` are generated outputs and are ignored by git.
+
 To plot a specific file from a parametric scan:
 ```bash
 root -l 'draw_histo.C("SEE_in_vacuum_thick20nm_energy1MeV.root")'
