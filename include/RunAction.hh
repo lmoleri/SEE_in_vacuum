@@ -19,6 +19,7 @@ public:
     // Called from SteppingAction
     void AddPrimaryElectron();
     void AddSecondaryElectron();
+    void AddEmittedElectron();
 
     // Track minimum non-zero primary energy deposition per event
     void UpdateMinNonZeroEdep(G4double edep);
@@ -37,6 +38,7 @@ private:
     void OptimizeHistogramInFile(const G4String& fileName);
     G4int fNPrimaryElectrons;
     G4int fNSecondaryElectrons;
+    G4int fNEmittedElectrons;
     G4double fMinNonZeroEdep;
     G4double fPrimaryEnergy;
     G4double fMaxPrimaryEnergy;
@@ -49,4 +51,3 @@ private:
 };
 
 #endif
-

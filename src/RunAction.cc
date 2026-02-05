@@ -19,6 +19,7 @@ RunAction::RunAction()
     : G4UserRunAction(),
       fNPrimaryElectrons(0),
       fNSecondaryElectrons(0),
+      fNEmittedElectrons(0),
       fMinNonZeroEdep(-1.),
       fPrimaryEnergy(0.),
       fMaxPrimaryEnergy(0.),
@@ -39,6 +40,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
 {
     fNPrimaryElectrons   = 0;
     fNSecondaryElectrons = 0;
+    fNEmittedElectrons = 0;
     fMinNonZeroEdep = -1.;
 
     auto* analysisManager = G4AnalysisManager::Instance();
@@ -67,6 +69,11 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleSColumn("primaryParticle");
         analysisManager->CreateNtupleSColumn("emModel");
         analysisManager->CreateNtupleIColumn("livermoreAtomicDeexcitation");
+        analysisManager->CreateNtupleIColumn("primaryElectrons");
+        analysisManager->CreateNtupleIColumn("secondaryElectrons");
+        analysisManager->CreateNtupleIColumn("emittedElectrons");
+        analysisManager->CreateNtupleDColumn("sey");
+        analysisManager->CreateNtupleDColumn("minNonZeroPrimaryEdepEv");
         analysisManager->FinishNtuple();
         metaCreated = true;
     }
@@ -319,9 +326,10 @@ void RunAction::EndOfRunAction(const G4Run* run)
     G4cout << "  Events processed       : " << nEvents << G4endl;
     G4cout << "  Primary electrons      : " << fNPrimaryElectrons << G4endl;
     G4cout << "  Secondary electrons out: " << fNSecondaryElectrons << G4endl;
+    G4cout << "  Emitted electrons out  : " << fNEmittedElectrons << G4endl;
 
     if (fNPrimaryElectrons > 0) {
-        const G4double sey = static_cast<G4double>(fNSecondaryElectrons) /
+        const G4double sey = static_cast<G4double>(fNEmittedElectrons) /
                              static_cast<G4double>(fNPrimaryElectrons);
         G4cout << "  Secondary electron yield (SEY) = "
                << sey << G4endl;
@@ -347,6 +355,16 @@ void RunAction::EndOfRunAction(const G4Run* run)
         analysisManager->FillNtupleSColumn(4, fPrimaryParticleName);
         analysisManager->FillNtupleSColumn(5, fEmModel);
         analysisManager->FillNtupleIColumn(6, fLivermoreAtomicDeexcitation);
+        analysisManager->FillNtupleIColumn(7, fNPrimaryElectrons);
+        analysisManager->FillNtupleIColumn(8, fNSecondaryElectrons);
+        analysisManager->FillNtupleIColumn(9, fNEmittedElectrons);
+        const G4double sey = (fNPrimaryElectrons > 0)
+                                 ? static_cast<G4double>(fNEmittedElectrons) /
+                                       static_cast<G4double>(fNPrimaryElectrons)
+                                 : 0.0;
+        analysisManager->FillNtupleDColumn(10, sey);
+        const G4double minNonZeroEdepEv = (fMinNonZeroEdep > 0.) ? (fMinNonZeroEdep / eV) : 0.0;
+        analysisManager->FillNtupleDColumn(11, minNonZeroEdepEv);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -375,6 +393,11 @@ void RunAction::AddPrimaryElectron()
 void RunAction::AddSecondaryElectron()
 {
     ++fNSecondaryElectrons;
+}
+
+void RunAction::AddEmittedElectron()
+{
+    ++fNEmittedElectrons;
 }
 
 void RunAction::UpdateMinNonZeroEdep(G4double edep)

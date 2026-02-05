@@ -324,3 +324,4 @@ Create a `run.mac` file to run simulations:
 - **`doc/MUON_SEY_MONTE_CARLO.md`**: Detailed documentation of the Monte Carlo physical model and implementation for muon secondary electron emission
 - **`doc/MUON_SEY_USAGE.md`**: Usage guide for the Monte Carlo SEY calculation script with examples and troubleshooting
 - **`doc/PLOT_LEGEND_EXPLANATION.md`**: Explanation of P_esc and Expected values on the SEY plot
+- **`doc/SEY_DIONNE_VALIDATION.md`**: Validation of electron SEY vs the Dionne analytic model (Fig. 9)

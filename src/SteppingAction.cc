@@ -121,20 +121,20 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         }
     }
 
-    // 2) Count secondary electrons that EXIT the Al2O3 layer into vacuum (world)
-    //    and exclude the primary beam electron (parentID == 0).
+    // 2) Count electrons that EXIT the Al2O3 layer into vacuum (world).
+    //    Track both total emitted electrons (including primaries) and true secondaries.
     if (preName == "Al2O3" && postName == "World") {
         const G4int parentId = track->GetParentID();
-        if (parentId > 0) {
-            // Apply a small kinetic energy threshold to avoid counting
-            // essentially "stopped" electrons as secondaries.
-            const G4double eKin = postPoint->GetKineticEnergy();
-            const G4double eThreshold = 1.0 * eV; // adjustable
+        // Apply a small kinetic energy threshold to avoid counting
+        // essentially "stopped" electrons as emitted.
+        const G4double eKin = postPoint->GetKineticEnergy();
+        const G4double eThreshold = 1.0 * eV; // adjustable
 
-            if (eKin > eThreshold) {
+        if (eKin > eThreshold) {
+            fRunAction->AddEmittedElectron();
+            if (parentId > 0) {
                 fRunAction->AddSecondaryElectron();
             }
         }
     }
 }
-
