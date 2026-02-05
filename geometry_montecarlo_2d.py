@@ -561,7 +561,9 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
     Plot an example 2D slice configuration (outer + inner circles).
     """
     import ROOT
-    from ROOT import TCanvas, TH2D, TEllipse, TLatex, TPaveText, gStyle, gPad
+    from array import array
+    import math
+    from ROOT import TCanvas, TH2D, TLatex, TPaveText, TPolyLine, gStyle, gPad
 
     gStyle.SetOptStat(0)
     gStyle.SetOptTitle(0)
@@ -576,6 +578,16 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
 
     W_um = W_nm * 1.0e-3
     L_um = L_nm * 1.0e-3
+
+    def make_circle_polyline(x_um, z_um, r_um, nseg=256):
+        xs = array("d")
+        ys = array("d")
+        for i in range(nseg + 1):
+            theta = 2.0 * math.pi * i / nseg
+            xs.append(x_um + r_um * math.cos(theta))
+            ys.append(z_um + r_um * math.sin(theta))
+        poly = TPolyLine(len(xs), xs, ys)
+        return poly
 
     def draw_slice(canvas_name, frame_name, y_max_um, out_suffix, note_lines):
         # Choose canvas size so the drawable area (after margins) matches the data aspect.
@@ -627,19 +639,17 @@ def plot_slice_configuration(circles, W_nm, L_nm, out_base, title, params_text,
             if z_um < 0.0 or z_um > y_max_um:
                 continue
             r_out_um = r_out * 1.0e-3
-            outer = TEllipse(x_um, z_um, r_out_um)
+            outer = make_circle_polyline(x_um, z_um, r_out_um, nseg=256)
             outer.SetLineColor(ROOT.kBlue + 2)
             outer.SetLineWidth(1)
-            outer.SetFillStyle(0)
             outer.Draw()
             ellipses.append(outer)
 
             if r_core > 0.0:
                 r_core_um = r_core * 1.0e-3
-                inner = TEllipse(x_um, z_um, r_core_um)
+                inner = make_circle_polyline(x_um, z_um, r_core_um, nseg=256)
                 inner.SetLineColor(ROOT.kRed + 1)
                 inner.SetLineWidth(1)
-                inner.SetFillStyle(0)
                 inner.Draw()
                 ellipses.append(inner)
 
@@ -1206,6 +1216,85 @@ def run_combo_L_scan(cfg, ref, mc_cfg, plots_dir, quick=False):
     return combo_summary
 
 
+def regenerate_slice_configs_only(cfg, ref, mc_cfg, plots_dir, quick=False):
+    """
+    Regenerate slice configuration plots without running rays.
+    """
+    scan_ranges = cfg.get("scan_ranges", {})
+    if not scan_ranges:
+        print("No scan_ranges found in config; skipping slice plots.")
+        return
+
+    W_um = mc_cfg.get("W_um", 10.0)
+    seed_base = mc_cfg.get("seed", 42)
+    plot_max_circles = mc_cfg.get("plot_max_circles", None)
+    if plot_max_circles is not None and plot_max_circles <= 0:
+        plot_max_circles = None
+    scan_plot_mode = mc_cfg.get("scan_slice_plots", "first_last")
+    quick_max_values = mc_cfg.get("quick_scan_max_values", 2)
+    quick_plot_max_circles = mc_cfg.get("quick_scan_plot_max_circles", 400)
+
+    if quick and plot_max_circles is None:
+        plot_max_circles = quick_plot_max_circles
+
+    slice_dir = os.path.join(plots_dir, "slice_configs_2d")
+    os.makedirs(slice_dir, exist_ok=True)
+
+    scan_keys = ["phi", "d_nm", "a_nm", "L_um"]
+    scan_index = 0
+
+    for scan_name in scan_keys:
+        values = scan_ranges.get(scan_name, [])
+        if not values:
+            scan_index += 1
+            continue
+        if quick and len(values) > quick_max_values:
+            values = values[:quick_max_values]
+
+        plot_indices = select_plot_indices(len(values), scan_plot_mode)
+        print(f"[Slice plots] {scan_name} ({len(values)} values), indices={sorted(plot_indices)}")
+
+        for idx, val in enumerate(values):
+            if idx not in plot_indices:
+                continue
+
+            L_um = mc_cfg.get("L_um", ref["L_um"])
+            a_nm = ref["a_nm"]
+            d_nm = ref["d_nm"]
+            phi = ref["phi"]
+
+            if scan_name == "phi":
+                phi = float(val)
+            elif scan_name == "d_nm":
+                d_nm = float(val)
+            elif scan_name == "a_nm":
+                a_nm = float(val)
+            elif scan_name == "L_um":
+                L_um = float(val)
+
+            seed_case = seed_base + scan_index * 1000 + idx * 7
+            circles, _ = generate_circles_2d(
+                L_um, W_um, a_nm, d_nm, phi, seed=seed_case
+            )
+
+            tag = f"{scan_name}_{format_param(val)}"
+            out_base = os.path.join(slice_dir, f"slice_config_{tag}")
+            title = f"2D slice: {scan_name} = {val}"
+            params_text = f"L={L_um} #mum, W={W_um} #mum, a={a_nm} nm, d={d_nm} nm, #phi={phi}"
+            plot_slice_configuration(
+                circles,
+                W_um * 1000.0,
+                L_um * 1000.0,
+                out_base,
+                title,
+                params_text,
+                max_circles=plot_max_circles,
+                seed=seed_case + 2,
+            )
+
+        scan_index += 1
+
+
 def regenerate_scan_plots_from_summary(summary_path, config_path=None):
     """
     Regenerate 2D scan plots from a previously saved summary JSON.
@@ -1543,6 +1632,8 @@ def main():
                         help="Run MC-only L scan for each (a, phi) combination")
     parser.add_argument("--plot-only", action="store_true",
                         help="Regenerate scan plots from existing summary JSON (no MC run)")
+    parser.add_argument("--plot-slices-only", action="store_true",
+                        help="Regenerate slice configuration plots only (no MC rays)")
     parser.add_argument("--summary", default=None,
                         help="Path to geometry_mc_2d_scan_summary.json for --plot-only")
     args = parser.parse_args()
@@ -1553,6 +1644,14 @@ def main():
         output_dir = cfg.get("output_dir", "results/geometry")
         summary_path = args.summary or os.path.join(output_dir, "geometry_mc_2d_scan_summary.json")
         regenerate_scan_plots_from_summary(summary_path, args.config)
+    elif args.plot_slices_only:
+        with open(args.config, "r") as f:
+            cfg = json.load(f)
+        ref = cfg["reference"]
+        mc_cfg = cfg.get("montecarlo_2d", cfg.get("montecarlo", {}))
+        plots_dir = cfg.get("plots_dir", "plots/geometry")
+        os.makedirs(plots_dir, exist_ok=True)
+        regenerate_slice_configs_only(cfg, ref, mc_cfg, plots_dir, quick=args.scan_quick)
     elif args.combo_L_scan:
         with open(args.config, "r") as f:
             cfg = json.load(f)
