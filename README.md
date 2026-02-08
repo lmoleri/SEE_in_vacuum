@@ -68,13 +68,14 @@ Example `config/geant4/scan.json`:
 ```json
 {
   "sample_thickness_nm": [10, 20, 50],
+  "substrate_thickness_nm": [0],
   "primary_energy_MeV": [0.5, 1.0, 2.0],
   "em_model": "PAI",
   "primary_particle": "e-",
   "pai_enabled": true,
   "livermore_atomic_deexcitation": true,
   "events": 100000,
-  "output_dir": "results/scan_thick10-20-50nm_particlee-_energy0p5-1-2MeV_events100000"
+  "output_dir": "results/scan_thick10-20-50nm_sub0nm_particlee-_energy0p5-1-2MeV_events100000"
 }
 ```
 
@@ -92,14 +93,24 @@ Example `config/geant4/scan.json`:
 
 **Note**: When comparing muon simulations, only the PAI model will show differences from standard physics. Livermore and Penelope muon results will be identical to each other and to standard GEANT4 muon physics, as they all use the same underlying Bethe-Bloch models for muon ionization.
 
+## Energy-deposition–only workflow (recommended for custom SEY)
+
+If you are using Geant4 **only** to obtain energy deposition and compute secondary electrons in a custom MC:
+- **Large production cuts are desirable**. They suppress Geant4 secondaries and leave energy as local deposition, which is exactly what you want for a post‑processing SEY model.
+- **Step size still matters**. Even with large cuts, coarse stepping can smear the depth profile in a 5 nm layer. In that case, constrain the max step in Al2O3 (see `doc/SEY_DIONNE_VALIDATION.md` for diagnostics and guidance).
+
 `pai_enabled` is only used when `em_model` is `"PAI"`.
 
 `livermore_atomic_deexcitation` is only used when `em_model` is `"G4EmLivermorePhysics"`
 (or `"livermore"`), and toggles atomic deexcitation (Fluo/Auger/PIXE).
 
+`substrate_thickness_nm` sets the Si substrate thickness beneath the Al2O3 coating.
+Use `0` (default) for no substrate. When scanning, the array must be size 1 or match
+the length of `sample_thickness_nm`.
+
 Output files are created inside `output_dir` for each combination. When `output_dir`
 is relative, it is resolved from the project root (not `build/`), e.g.:
-`results/scan_thick10-20-50nm_particlee-_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_particlee-_energy1MeV_events100000.root`
+`results/scan_thick10-20-50nm_sub0nm_particlee-_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_sub0nm_particlee-_energy1MeV_events100000.root`
 
 ## Outputs
 
@@ -115,8 +126,8 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
   - `ResidualEnergyVsLastProcess`: 2D residual energy vs last process category
   - `ResidualEnergyVsStopStatus`: 2D residual energy vs stop status category
   - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`,
-  `maxPrimaryEnergyMeV`, `paiEnabled`, `primaryParticle`, `emModel`,
-  and `livermoreAtomicDeexcitation`
+  `substrateThicknessNm`, `maxPrimaryEnergyMeV`, `paiEnabled`, `primaryParticle`,
+  `emModel`, and `livermoreAtomicDeexcitation`
   - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`, and other canvases saved with annotations
 
 ## Plotting

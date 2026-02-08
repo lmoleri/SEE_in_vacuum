@@ -253,16 +253,33 @@ int main(int argc, char** argv)
         std::string content = jsonContent;
         auto thicknessNm = ParseArray(content, "sample_thickness_nm");
         auto energiesMeV = ParseArray(content, "primary_energy_MeV");
+        auto substrateNm = ParseArray(content, "substrate_thickness_nm");
+        if (substrateNm.empty()) {
+            double substrateSingle = 0.0;
+            if (ParseNumber(content, "substrate_thickness_nm", substrateSingle)) {
+                substrateNm.push_back(substrateSingle);
+            } else {
+                substrateNm.push_back(0.0);
+            }
+        }
         double events = 100000;
         ParseNumber(content, "events", events);
         std::string outputDir = ParseString(content, "output_dir");
         std::string primaryParticle = ParseString(content, "primary_particle");
+        double seyAlphaInvNm = 0.0;
+        ParseNumber(content, "sey_alpha_inv_nm", seyAlphaInvNm);
         if (primaryParticle.empty()) {
             primaryParticle = "e-";
         }
 
         if (thicknessNm.empty() || energiesMeV.empty()) {
             G4cerr << "Error: JSON must include arrays for sample_thickness_nm and primary_energy_MeV."
+                   << G4endl;
+            delete runManager;
+            return 1;
+        }
+        if (!(substrateNm.size() == 1 || substrateNm.size() == thicknessNm.size())) {
+            G4cerr << "Error: substrate_thickness_nm must have size 1 or match sample_thickness_nm."
                    << G4endl;
             delete runManager;
             return 1;
@@ -284,6 +301,9 @@ int main(int argc, char** argv)
         primaryGenerator->SetParticleName(primaryParticle);
         runAction->SetPrimaryParticleName(primaryParticle);
         runAction->SetEmModel(emModel);
+        if (seyAlphaInvNm > 0.0) {
+            runAction->SetSeyAlphaInvNm(seyAlphaInvNm);
+        }
         const bool emModelIsPai = (emModelLower == "pai");
         const bool emModelIsLivermore =
             (emModelLower == "g4emlivermorephysics" || emModelLower == "livermore" ||
@@ -302,12 +322,17 @@ int main(int argc, char** argv)
         }
 
         std::string autoDir;
+        const std::string substrateList = JoinParams(substrateNm, "nm");
+        const std::string substrateSuffix = "_sub" + substrateList;
         if (outputDir.empty()) {
             std::string thickList = JoinParams(thicknessNm, "nm");
             std::string energyList = JoinParams(energiesMeV, "MeV");
             autoDir = "scan_thick" + thickList + "_particle" + primaryParticle +
                       "_energy" + energyList +
+                      substrateSuffix +
                       "_events" + FormatParam(events);
+        } else if (outputDir.find("_sub") == std::string::npos) {
+            outputDir += substrateSuffix;
         }
         std::filesystem::path baseDir = std::filesystem::current_path();
         if (baseDir.filename() == "build") {
@@ -326,9 +351,13 @@ int main(int argc, char** argv)
 
         const int eventsInt = static_cast<int>(events);
 
-        for (double thickness : thicknessNm) {
+        for (size_t idx = 0; idx < thicknessNm.size(); ++idx) {
+            const double thickness = thicknessNm[idx];
+            const double substrate = (substrateNm.size() == 1) ? substrateNm[0] : substrateNm[idx];
             detector->SetSampleThickness(thickness * nm);
+            detector->SetSubstrateThickness(substrate * nm);
             runAction->SetSampleThickness(thickness * nm);
+            runAction->SetSubstrateThickness(substrate * nm);
             runManager->ReinitializeGeometry(true);
             UImanager->ApplyCommand("/run/initialize");
 
@@ -338,7 +367,8 @@ int main(int argc, char** argv)
                 UImanager->ApplyCommand(energyCmd);
 
                 std::string tag = outputDir + "/SEE_in_vacuum_thick" +
-                                  FormatParam(thickness) + "nm_particle" +
+                                  FormatParam(thickness) + "nm_sub" +
+                                  FormatParam(substrate) + "nm_particle" +
                                   primaryParticle + "_energy" +
                                   FormatParam(energy) + "MeV_events" +
                                   FormatParam(events);

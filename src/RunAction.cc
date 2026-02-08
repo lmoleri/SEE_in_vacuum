@@ -5,15 +5,85 @@
 #include "G4SystemOfUnits.hh"
 #include "G4ios.hh"
 #include "G4AnalysisManager.hh"
+#include "G4RegionStore.hh"
+#include "G4ProductionCutsTable.hh"
+#include "G4ProductionCuts.hh"
+#include "G4EmParameters.hh"
+#include "G4Gamma.hh"
+#include "G4Electron.hh"
+#include "G4Positron.hh"
+#include "G4Proton.hh"
 
 #include "DetectorConstruction.hh"
 
 #include <cmath>
+#include <iomanip>
 
 // ROOT headers for histogram optimization
 #include "TFile.h"
 #include "TH1.h"
 #include "TString.h"
+
+namespace {
+void PrintRegionCuts(const G4String& regionName)
+{
+    auto* region = G4RegionStore::GetInstance()->GetRegion(regionName, false);
+    if (!region) {
+        G4cout << "  Region not found: " << regionName << G4endl;
+        return;
+    }
+    auto* cuts = region->GetProductionCuts();
+    if (!cuts) {
+        G4cout << "  Region " << regionName << ": no production cuts assigned." << G4endl;
+        return;
+    }
+    auto* table = G4ProductionCutsTable::GetProductionCutsTable();
+    if (!table) {
+        G4cout << "  ProductionCutsTable not available." << G4endl;
+        return;
+    }
+
+    struct ParticleCutInfo {
+        const char* name;
+        const G4ParticleDefinition* particle;
+        G4int index;
+    };
+    const ParticleCutInfo particles[] = {
+        {"gamma", G4Gamma::Gamma(), idxG4GammaCut},
+        {"e-", G4Electron::Electron(), idxG4ElectronCut},
+        {"e+", G4Positron::Positron(), idxG4PositronCut},
+        {"proton", G4Proton::Proton(), idxG4ProtonCut},
+    };
+
+    const auto nMaterials = region->GetNumberOfMaterials();
+    if (nMaterials == 0) {
+        G4cout << "  Region " << regionName << ": no materials registered." << G4endl;
+        return;
+    }
+
+    G4cout << "  Region: " << regionName << G4endl;
+    auto matBegin = region->GetMaterialIterator();
+    auto matEnd = matBegin + nMaterials;
+    for (auto it = matBegin; it != matEnd; ++it) {
+        const auto* material = *it;
+        if (!material) continue;
+        G4cout << "    Material: " << material->GetName() << G4endl;
+        for (const auto& p : particles) {
+            const G4double range = cuts->GetProductionCut(p.index);
+            const G4double energy = table->ConvertRangeToEnergy(p.particle, material, range);
+            G4cout << "      " << std::setw(6) << p.name
+                   << " cut: " << std::setw(10) << range / nm << " nm"
+                   << " (" << range / mm << " mm)";
+            if (energy > 0.) {
+                G4cout << " -> " << energy / eV << " eV";
+            } else {
+                G4cout << " -> n/a";
+            }
+            G4cout << G4endl;
+        }
+    }
+}
+}  // namespace
 
 RunAction::RunAction()
     : G4UserRunAction(),
@@ -26,9 +96,16 @@ RunAction::RunAction()
       fPrimaryParticleName("e-"),
       fEmModel("PAI"),
       fSampleThickness(0.),
+      fSubstrateThickness(0.),
       fOutputTag("SEE_in_vacuum"),
       fPaiEnabled(false),
-      fLivermoreAtomicDeexcitation(-1)
+      fLivermoreAtomicDeexcitation(-1),
+      fSeyAlphaInvNm(0.0),
+      fPrimaryDirectionZ(1.0),
+      fEdepPrimaryWeightedId(-1),
+      fEdepDepthPrimaryId(-1),
+      fEdepDepthPrimaryWeightedId(-1),
+      fPrimaryTrackLengthId(-1)
 {
 }
 
@@ -57,6 +134,17 @@ void RunAction::BeginOfRunAction(const G4Run*)
             fSampleThickness = det->GetSampleThickness();
         }
     }
+    // Capture substrate thickness from detector if not set
+    if (fSubstrateThickness < 0.) {
+        fSubstrateThickness = 0.;
+    }
+    if (fSubstrateThickness == 0.) {
+        auto* det = dynamic_cast<const DetectorConstruction*>(
+            G4RunManager::GetRunManager()->GetUserDetectorConstruction());
+        if (det) {
+            fSubstrateThickness = det->GetSubstrateThickness();
+        }
+    }
 
     static G4bool metaCreated = false;
     static G4bool histosCreated = false;
@@ -64,6 +152,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtuple("RunMeta", "Run metadata");
         analysisManager->CreateNtupleDColumn("primaryEnergyMeV");
         analysisManager->CreateNtupleDColumn("sampleThicknessNm");
+        analysisManager->CreateNtupleDColumn("substrateThicknessNm");
         analysisManager->CreateNtupleDColumn("maxPrimaryEnergyMeV");
         analysisManager->CreateNtupleIColumn("paiEnabled");
         analysisManager->CreateNtupleSColumn("primaryParticle");
@@ -129,6 +218,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         // Set axis labels explicitly (X-axis in eV units)
         analysisManager->SetH1XAxisTitle(histoId, "Energy deposition (eV)");
         analysisManager->SetH1YAxisTitle(histoId, "Number of events");
+
 
         // Get maxEnergy for other histograms (use primary energy for residual energy, etc.)
         G4double maxEnergy = fMaxPrimaryEnergy;
@@ -239,6 +329,64 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->SetH1XAxisTitle(stepLenId, "Step length (nm)");
         analysisManager->SetH1YAxisTitle(stepLenId, "Number of steps");
 
+        // Create depth profiles for primary electron energy deposition (unweighted + weighted).
+        if (thicknessNm > 0.) {
+            const G4double depthBinNm = 0.05;
+            const G4int maxDepthBins = 4000;
+            const G4double idealDepthBins = std::ceil(thicknessNm / depthBinNm);
+            const G4int depthBins = std::max(
+                1, static_cast<G4int>(std::min(idealDepthBins, static_cast<G4double>(maxDepthBins))));
+            fEdepDepthPrimaryId = analysisManager->CreateH1(
+                "EdepDepthPrimary",
+                "Primary e- energy deposition vs depth in Al_{2}O_{3}",
+                depthBins,
+                0.,
+                thicknessNm
+            );
+            analysisManager->SetH1XAxisTitle(fEdepDepthPrimaryId, "Depth from entrance (nm)");
+            analysisManager->SetH1YAxisTitle(fEdepDepthPrimaryId, "Energy deposition (eV)");
+
+            fEdepDepthPrimaryWeightedId = analysisManager->CreateH1(
+                "EdepDepthPrimaryWeighted",
+                "Depth-weighted primary e- energy deposition vs depth in Al_{2}O_{3}",
+                depthBins,
+                0.,
+                thicknessNm
+            );
+            analysisManager->SetH1XAxisTitle(fEdepDepthPrimaryWeightedId, "Depth from entrance (nm)");
+            analysisManager->SetH1YAxisTitle(fEdepDepthPrimaryWeightedId, "Weighted energy deposition (eV)");
+        }
+
+        // Create a 1D histogram for depth-weighted energy deposition in Al2O3 (primary electron only).
+        // Append at the end to preserve existing H1 IDs used elsewhere.
+        fEdepPrimaryWeightedId = analysisManager->CreateH1(
+            "EdepPrimaryWeighted",
+            "Depth-weighted energy deposition in Al_{2}O_{3} (primary e-)",
+            finalBins,
+            0.,
+            maxEdepRange / eV
+        );
+        analysisManager->SetH1XAxisTitle(fEdepPrimaryWeightedId, "Weighted energy deposition (eV)");
+        analysisManager->SetH1YAxisTitle(fEdepPrimaryWeightedId, "Number of events");
+
+        // Create a 1D histogram for primary track length in Al2O3 (per event).
+        // Append at the end to keep existing H1 IDs stable.
+        const G4double maxTrackLenNm = std::max(100.0, std::min(thicknessNm * 200.0, 10000.0));
+        const G4double trackLenBinNm = 0.1;
+        const G4int maxTrackLenBins = 200000;
+        const G4double idealTrackLenBins = std::ceil(maxTrackLenNm / trackLenBinNm);
+        const G4int trackLenBins = std::max(
+            1, static_cast<G4int>(std::min(idealTrackLenBins, static_cast<G4double>(maxTrackLenBins))));
+        fPrimaryTrackLengthId = analysisManager->CreateH1(
+            "PrimaryTrackLengthAl2O3",
+            "Primary track length in Al_{2}O_{3} per event",
+            trackLenBins,
+            0.,
+            maxTrackLenNm
+        );
+        analysisManager->SetH1XAxisTitle(fPrimaryTrackLengthId, "Track length (nm)");
+        analysisManager->SetH1YAxisTitle(fPrimaryTrackLengthId, "Number of events");
+
         // Create a 2D histogram: event edep vs number of steps in Al2O3
         // ID 0 for H2: EdepPrimaryVsSteps
         // Use the same binning as EdepPrimary (maxEdepRange, not maxEnergy)
@@ -303,6 +451,35 @@ void RunAction::BeginOfRunAction(const G4Run*)
         histosCreated = true;
     }
 
+    // Dump effective cuts and EM step settings once for diagnostics
+    static G4bool printedCuts = false;
+    if (!printedCuts) {
+        printedCuts = true;
+        auto* cutsTable = G4ProductionCutsTable::GetProductionCutsTable();
+        if (cutsTable) {
+            G4cout << "\n--- Production cuts table ---" << G4endl;
+            G4cout << "  Energy range: "
+                   << cutsTable->GetLowEdgeEnergy() / eV << " eV -> "
+                   << cutsTable->GetHighEdgeEnergy() / eV << " eV" << G4endl;
+        }
+        G4cout << "\n--- Effective production cuts ---" << G4endl;
+        PrintRegionCuts("Al2O3Region");
+        PrintRegionCuts("DefaultRegionForTheWorld");
+
+        auto* emParams = G4EmParameters::Instance();
+        if (emParams) {
+            G4cout << "\n--- EM step settings (global) ---" << G4endl;
+            G4cout << "  MscRangeFactor (e-/e+): " << emParams->MscRangeFactor() << G4endl;
+            G4cout << "  MscGeomFactor: " << emParams->MscGeomFactor() << G4endl;
+            G4cout << "  MscSafetyFactor: " << emParams->MscSafetyFactor() << G4endl;
+            G4cout << "  MscLambdaLimit: " << emParams->MscLambdaLimit() / mm << " mm" << G4endl;
+            G4cout << "  MscSkin: " << emParams->MscSkin() << G4endl;
+            G4cout << "  LinearLossLimit: " << emParams->LinearLossLimit() << G4endl;
+            G4cout << "  MinKinEnergy: " << emParams->MinKinEnergy() / eV << " eV" << G4endl;
+            G4cout << "  LowestElectronEnergy: " << emParams->LowestElectronEnergy() / eV << " eV" << G4endl;
+        }
+    }
+
     // Open output file for this run
     G4String fileName = fOutputTag;
     if (fileName.empty()) {
@@ -350,21 +527,22 @@ void RunAction::EndOfRunAction(const G4Run* run)
     if (analysisManager) {
         analysisManager->FillNtupleDColumn(0, fPrimaryEnergy / MeV);
         analysisManager->FillNtupleDColumn(1, fSampleThickness / nm);
-        analysisManager->FillNtupleDColumn(2, fMaxPrimaryEnergy / MeV);
-        analysisManager->FillNtupleIColumn(3, fPaiEnabled ? 1 : 0);
-        analysisManager->FillNtupleSColumn(4, fPrimaryParticleName);
-        analysisManager->FillNtupleSColumn(5, fEmModel);
-        analysisManager->FillNtupleIColumn(6, fLivermoreAtomicDeexcitation);
-        analysisManager->FillNtupleIColumn(7, fNPrimaryElectrons);
-        analysisManager->FillNtupleIColumn(8, fNSecondaryElectrons);
-        analysisManager->FillNtupleIColumn(9, fNEmittedElectrons);
+        analysisManager->FillNtupleDColumn(2, fSubstrateThickness / nm);
+        analysisManager->FillNtupleDColumn(3, fMaxPrimaryEnergy / MeV);
+        analysisManager->FillNtupleIColumn(4, fPaiEnabled ? 1 : 0);
+        analysisManager->FillNtupleSColumn(5, fPrimaryParticleName);
+        analysisManager->FillNtupleSColumn(6, fEmModel);
+        analysisManager->FillNtupleIColumn(7, fLivermoreAtomicDeexcitation);
+        analysisManager->FillNtupleIColumn(8, fNPrimaryElectrons);
+        analysisManager->FillNtupleIColumn(9, fNSecondaryElectrons);
+        analysisManager->FillNtupleIColumn(10, fNEmittedElectrons);
         const G4double sey = (fNPrimaryElectrons > 0)
                                  ? static_cast<G4double>(fNEmittedElectrons) /
                                        static_cast<G4double>(fNPrimaryElectrons)
                                  : 0.0;
-        analysisManager->FillNtupleDColumn(10, sey);
+        analysisManager->FillNtupleDColumn(11, sey);
         const G4double minNonZeroEdepEv = (fMinNonZeroEdep > 0.) ? (fMinNonZeroEdep / eV) : 0.0;
-        analysisManager->FillNtupleDColumn(11, minNonZeroEdepEv);
+        analysisManager->FillNtupleDColumn(12, minNonZeroEdepEv);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -433,6 +611,61 @@ void RunAction::SetEmModel(const G4String& model)
 void RunAction::SetSampleThickness(G4double thickness)
 {
     fSampleThickness = thickness;
+}
+
+void RunAction::SetSubstrateThickness(G4double thickness)
+{
+    fSubstrateThickness = thickness;
+}
+
+G4double RunAction::GetSampleThickness() const
+{
+    return fSampleThickness;
+}
+
+G4double RunAction::GetSubstrateThickness() const
+{
+    return fSubstrateThickness;
+}
+
+void RunAction::SetSeyAlphaInvNm(G4double alphaInvNm)
+{
+    fSeyAlphaInvNm = alphaInvNm;
+}
+
+G4double RunAction::GetSeyAlphaInvNm() const
+{
+    return fSeyAlphaInvNm;
+}
+
+void RunAction::SetPrimaryDirectionZ(G4double dirZ)
+{
+    fPrimaryDirectionZ = dirZ;
+}
+
+G4double RunAction::GetPrimaryDirectionZ() const
+{
+    return fPrimaryDirectionZ;
+}
+
+G4int RunAction::GetEdepPrimaryWeightedId() const
+{
+    return fEdepPrimaryWeightedId;
+}
+
+G4int RunAction::GetEdepDepthPrimaryId() const
+{
+    return fEdepDepthPrimaryId;
+}
+
+G4int RunAction::GetEdepDepthPrimaryWeightedId() const
+{
+    return fEdepDepthPrimaryWeightedId;
+}
+
+G4int RunAction::GetPrimaryTrackLengthId() const
+{
+    return fPrimaryTrackLengthId;
 }
 
 void RunAction::SetOutputTag(const G4String& tag)

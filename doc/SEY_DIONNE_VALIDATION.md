@@ -22,9 +22,9 @@ $$
 - `E_a` is the inner SE excitation energy (eV).
 - `A`, `B`, `n`, `α` are material parameters (see Table II/III in the paper).
 - `d` is the penetration depth (nm) implied by the model (Eq. 5).
-- In the paper, `α` is listed without explicit units. The validation script defaults to
-  interpreting `α` in **1/Å** and converts it to **1/nm** by multiplying by 10.
-  Use `--alpha-unit nm` (or `--alpha-scale 1`) to disable this scaling if needed.
+- In the paper, `α` is listed without explicit units. The validation script now defaults to
+  interpreting `α` in **1/nm**. Use `--alpha-unit angstrom` (or `--alpha-scale 10`)
+  if you want to apply an Å → nm conversion.
 
 ## Escape probability vs depth (toy MC, option 2)
 
@@ -66,7 +66,7 @@ The validation script ships with presets taken from the paper:
   - 3 nm: `B=0.425`, `A=35`, `n=1.57`, `α=0.013`
   - 5 nm: `B=0.450`, `A=36`, `n=1.60`, `α=0.0090`
 
-`E_a` is not explicitly listed in the paper; the script uses a default of `E_a = 1.0 eV`
+`E_a` is not explicitly listed in the paper; the script uses a default of `E_a = 10 eV`
 and allows overrides via CLI.
 
 ## Running the validation
@@ -83,7 +83,7 @@ and allows overrides via CLI.
    conda run -n geant4 python scripts/validate_sey_dionne.py \
      --results-dir results/scan_thick20nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope \
      --material al2o3 \
-     --Ea 1.0
+     --Ea 10
    ```
 
 Output is saved in `plots/MC_electrons_on_shell_dionne-model/mc_vs_dionne/`.
@@ -98,24 +98,60 @@ conda run -n geant4 ./build/SEE_in_vacuum config/geant4/scan_dionne_validation_5
 conda run -n geant4 python scripts/validate_sey_dionne.py \
   --results-dir results/scan_dionne_validation_5nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope \
   --material al2o3_5nm \
-  --em-model Penelope \
-  --fit-fig9 \
-  --fig9-ea-on-material
+  --em-model Penelope
 ```
 
-### Dual-fit overlay (Fig. 9 + MC peak)
+### Step-level depth weighting (electrons only)
 
-To overlay both analytic curves (Fig. 9 fit and MC-peak fit) on the same plot:
+When `sey_alpha_inv_nm` is set in the JSON scan config, Geant4 will also produce
+`EdepPrimaryWeighted`, which applies the per-step escape weighting:
+
+$$
+\Delta E_{\mathrm{weighted}} = \sum_i \Delta E_i e^{-\alpha z_i}
+$$
+
+Here `z_i` is measured from the **entrance side** (the side the primary impinges on).
+
+To use this weighted histogram in the toy MC, pass `--histogram EdepPrimaryWeighted`
+and `--depth-model weighted` (or `--weighted-edep`):
 
 ```bash
-conda run -n geant4 python scripts/validate_sey_dionne.py \
-  --results-dir results/scan_dionne_validation_5nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope \
-  --material al2o3_5nm \
-  --mc-source toy \
-  --em-model Penelope \
-  --fit-fig9 \
-  --fit-mc-peak
+conda run -n geant4 python calculate_muon_sey.py \
+  --input-dir results/scan_dionne_validation_5nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope \
+  --histogram EdepPrimaryWeighted \
+  --weighted-edep
 ```
 
 Note: the SEY stored in `RunMeta` is computed from **emitted electrons** (all e- leaving the Al2O3 layer,
 including primaries), matching the usual definition of total yield.
+
+## Effective production cuts and step limits (Al2O3 region)
+
+We dumped the **effective production cuts** actually used in the Al2O3 region. With the current
+defaults, the range cut is **1 mm**, which corresponds to **hundreds of keV** for electrons in Al2O3.
+That means low-energy secondaries are not produced in the Al2O3 region at all.
+
+If you are using Geant4 **only for energy deposition** and compute secondaries in a custom MC,
+this is actually desirable: **large production cuts suppress Geant4 secondaries and leave energy
+as local deposition**.
+
+Example output (Al2O3 region, 5 nm scan):
+
+```
+gamma cut: 1 mm -> ~7.1 keV
+e- cut:    1 mm -> ~826 keV
+e+ cut:    1 mm -> ~791 keV
+proton:    1 mm -> 100 keV
+```
+
+Global EM step settings (shown by Geant4):
+
+```
+Step function for e+-: (0.2, 0.01 mm)
+MscRangeFactor (e-/e+): 0.08
+MscLambdaLimit: 1 mm
+```
+
+Implication: these defaults are **orders of magnitude larger than the 5 nm layer thickness** and can
+push the effective energy-deposition peak to higher energies. To study the ~300 eV peak region, we
+will need to tighten production cuts and step limits specifically for the Al2O3 region.

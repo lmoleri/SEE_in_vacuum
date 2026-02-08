@@ -2,17 +2,22 @@
 #include "G4SystemOfUnits.hh"
 #include "G4PhysicalConstants.hh"
 #include "G4RegionStore.hh"
+#include "G4UserLimits.hh"
 
 DetectorConstruction::DetectorConstruction()
     : fWorldMaterial(nullptr),
       fAl2O3Material(nullptr),
+      fSiMaterial(nullptr),
       fWorldLogical(nullptr),
       fAl2O3Logical(nullptr),
+      fSiLogical(nullptr),
       fWorldPhysical(nullptr),
       fAl2O3Physical(nullptr),
+      fSiPhysical(nullptr),
       fAl2O3Region(nullptr)
 {
     fSampleThickness = 20.0 * nm;
+    fSubstrateThickness = 0.0;
 }
 
 DetectorConstruction::~DetectorConstruction()
@@ -49,10 +54,16 @@ void DetectorConstruction::DefineMaterials()
         fAl2O3Material->AddElement(elAl, 2);
         fAl2O3Material->AddElement(elO, 3);
     }
+
+    // Silicon substrate material
+    fSiMaterial = nist->FindOrBuildMaterial("G4_Si");
     
     G4cout << "\n--- Material properties ---" << G4endl;
     G4cout << "World material: " << fWorldMaterial->GetName() << G4endl;
     G4cout << "Al2O3 density: " << fAl2O3Material->GetDensity() / (g/cm3) << " g/cm³" << G4endl;
+    if (fSiMaterial) {
+        G4cout << "Si density: " << fSiMaterial->GetDensity() / (g/cm3) << " g/cm³" << G4endl;
+    }
 }
 
 G4VPhysicalVolume* DetectorConstruction::Construct()
@@ -89,6 +100,7 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
     // Thickness and diameter are configurable (defaults: 20 nm, 200 nm)
     G4double thickness = fSampleThickness > 0. ? fSampleThickness : 20.0 * nm;
     G4double radius = 100.0 * nm;  // radius = diameter/2 (diameter = 200 nm)
+    G4double substrateThickness = fSubstrateThickness;
 
     fSampleThickness = thickness;
     
@@ -102,6 +114,10 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
     fAl2O3Logical = new G4LogicalVolume(al2o3Solid,
                                         fAl2O3Material,
                                         "Al2O3");
+
+    // Constrain step length inside Al2O3 for depth-resolved energy deposition.
+    // 0.5 nm is a pragmatic compromise between accuracy and speed.
+    fAl2O3Logical->SetUserLimits(new G4UserLimits(0.5 * nm));
     
     // Position the Al2O3 layer at the origin, inside the world
     fAl2O3Physical = new G4PVPlacement(
@@ -113,6 +129,31 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
         false,                      // no boolean operations
         0,                          // copy number
         true);                      // check overlaps
+
+    // Silicon substrate below the Al2O3 coating (positive z direction)
+    if (fSiMaterial && substrateThickness > 0.) {
+        G4Tubs* siSolid = new G4Tubs("Si",
+                                     0.0,
+                                     radius,
+                                     0.5 * substrateThickness,
+                                     0.0,
+                                     2.0 * M_PI);
+        fSiLogical = new G4LogicalVolume(siSolid,
+                                         fSiMaterial,
+                                         "Si");
+
+        // Align top of Si substrate with bottom of Al2O3 layer
+        const G4double siCenterZ = 0.5 * thickness + 0.5 * substrateThickness;
+        fSiPhysical = new G4PVPlacement(
+            nullptr,
+            G4ThreeVector(0, 0, siCenterZ),
+            fSiLogical,
+            "Si",
+            fWorldLogical,
+            false,
+            0,
+            true);
+    }
 
     // Define a dedicated region for the Al2O3 target so that we can
     // attach the PAI model only in this thin layer.
@@ -134,6 +175,12 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
     G4cout << "  Thickness: " << fSampleThickness / nm << " nm" << G4endl;
     G4cout << "  Diameter: " << 2.0 * radius / nm << " nm" << G4endl;
     G4cout << "  Volume: " << M_PI * radius * radius * thickness / (nm*nm*nm) << " nm³" << G4endl;
+    if (fSiLogical && substrateThickness > 0.) {
+        G4cout << "Si substrate:" << G4endl;
+        G4cout << "  Thickness: " << substrateThickness / nm << " nm" << G4endl;
+        G4cout << "  Diameter: " << 2.0 * radius / nm << " nm" << G4endl;
+        G4cout << "  Volume: " << M_PI * radius * radius * substrateThickness / (nm*nm*nm) << " nm³" << G4endl;
+    }
 
     return fWorldPhysical;
 }
@@ -148,4 +195,17 @@ void DetectorConstruction::SetSampleThickness(G4double thickness)
     if (thickness > 0.) {
         fSampleThickness = thickness;
     }
+}
+
+G4double DetectorConstruction::GetSubstrateThickness() const
+{
+    return fSubstrateThickness;
+}
+
+void DetectorConstruction::SetSubstrateThickness(G4double thickness)
+{
+    if (thickness < 0.) {
+        return;
+    }
+    fSubstrateThickness = thickness;
 }

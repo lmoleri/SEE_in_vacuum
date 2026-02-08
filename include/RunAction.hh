@@ -29,10 +29,21 @@ public:
     void SetPrimaryParticleName(const G4String& name);
     void SetEmModel(const G4String& model);
     void SetSampleThickness(G4double thickness);
+    void SetSubstrateThickness(G4double thickness);
+    void SetSeyAlphaInvNm(G4double alphaInvNm);
+    void SetPrimaryDirectionZ(G4double dirZ);
     void SetOutputTag(const G4String& tag);
     void SetPaiEnabled(G4bool enabled);
     void SetLivermoreAtomicDeexcitation(G4int value);
     G4bool IsPaiEnabled() const;
+    G4double GetSampleThickness() const;
+    G4double GetSubstrateThickness() const;
+    G4double GetSeyAlphaInvNm() const;
+    G4double GetPrimaryDirectionZ() const;
+    G4int GetEdepPrimaryWeightedId() const;
+    G4int GetEdepDepthPrimaryId() const;
+    G4int GetEdepDepthPrimaryWeightedId() const;
+    G4int GetPrimaryTrackLengthId() const;
 
 private:
     void OptimizeHistogramInFile(const G4String& fileName);
@@ -45,6 +56,13 @@ private:
     G4String fPrimaryParticleName;
     G4String fEmModel;
     G4double fSampleThickness;
+    G4double fSubstrateThickness;
+    G4double fSeyAlphaInvNm;
+    G4double fPrimaryDirectionZ;
+    G4int fEdepPrimaryWeightedId;
+    G4int fEdepDepthPrimaryId;
+    G4int fEdepDepthPrimaryWeightedId;
+    G4int fPrimaryTrackLengthId;
     G4String fOutputTag;
     G4bool fPaiEnabled;
     G4int fLivermoreAtomicDeexcitation;

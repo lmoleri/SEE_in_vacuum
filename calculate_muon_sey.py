@@ -56,6 +56,9 @@ def compute_escape_probability(depth_model, B_val, alpha_val, depth_val,
         "alpha": alpha_val,
         "B": B_val,
     }
+    if depth_model == "weighted":
+        meta.update({"depth_model": "weighted"})
+        return B_val, meta
     if depth_model == "dionne-exp":
         if energy_ev is None or dionne_A is None or dionne_n is None:
             raise ValueError("dionne-exp requires energy_ev, dionne_A, and dionne_n")
@@ -175,7 +178,9 @@ def calculate_sey_monte_carlo(edep_hist, random_gen=None, use_histogram_sampling
     print(f"  B (surface escape prob) = {B:.2f}")
     print(f"  α (attenuation coeff) = {ALPHA:.4f} Å^-1")
     p_esc = P_ESC if p_esc_override is None else p_esc_override
-    if p_esc_meta and p_esc_meta.get("depth_model") == "dionne-exp":
+    if p_esc_meta and p_esc_meta.get("depth_model") == "weighted":
+        print("  Depth model: weighted histogram (P_esc = B)")
+    elif p_esc_meta and p_esc_meta.get("depth_model") == "dionne-exp":
         print("  Depth model: exponential (Dionne d(E))")
         print("  E_p = {:.1f} eV, d(E) = {:.3g} nm".format(
             p_esc_meta.get("energy_ev", 0.0), p_esc_meta.get("dionne_d_nm", 0.0)))
@@ -765,7 +770,9 @@ def create_plot(sey_hist, statistics, input_file_path, n_int_hist=None):
         depth_model = p_meta.get("depth_model", "fixed")
         p_esc_val = statistics.get("p_esc", P_ESC)
         pbox.AddText("P_{esc} = %.4f" % p_esc_val)
-        if depth_model == "dionne-exp":
+        if depth_model == "weighted":
+            pbox.AddText("Depth: weighted")
+        elif depth_model == "dionne-exp":
             pbox.AddText("Depth: Dionne exp")
             pbox.AddText("E_p = %.0f eV" % p_meta.get("energy_ev", 0.0))
             pbox.AddText("d(E)=%.2g nm" % p_meta.get("dionne_d_nm", 0.0))
@@ -799,7 +806,9 @@ def create_plot(sey_hist, statistics, input_file_path, n_int_hist=None):
             pbox2.SetTextSize(0.022)
             pbox2.AddText("Parameters:")
             pbox2.AddText("P_{esc} = %.4f" % p_esc_val)
-            if depth_model == "dionne-exp":
+            if depth_model == "weighted":
+                pbox2.AddText("Depth: weighted")
+            elif depth_model == "dionne-exp":
                 pbox2.AddText("Depth: Dionne exp")
                 pbox2.AddText("E_p = %.0f eV" % p_meta.get("energy_ev", 0.0))
                 pbox2.AddText("d(E)=%.2g nm" % p_meta.get("dionne_d_nm", 0.0))
@@ -913,9 +922,14 @@ Example:
                        default=None,
                        help=f"Production depth in Å (default: {depth_default}, i.e., {depth_default/10} nm, or from config)")
     parser.add_argument("--depth-model",
-                       choices=["fixed", "dionne-exp"],
+                       choices=["fixed", "dionne-exp", "weighted"],
                        default=None,
-                       help="Depth model for escape probability: fixed depth, or exponential with mean Dionne d(E).")
+                       help="Depth model for escape probability: fixed depth, exponential with mean Dionne d(E), "
+                            "or weighted (Edep already includes exp(-alpha z)).")
+    parser.add_argument("--weighted-edep",
+                       action="store_true",
+                       help="Use when the Edep histogram is already depth-weighted. "
+                            "Sets P_esc=B and ignores depth attenuation.")
     parser.add_argument("--dionne-A",
                        type=float,
                        default=None,
@@ -976,6 +990,9 @@ Example:
         dionne_d_scale = 10.0  # default: convert d(E) from nm to Å
     energy_override_ev = args.energy_override_ev if args.energy_override_ev is not None else (cfg.get("energy_override_ev") if cfg else None)
     bin_by_bin = args.bin_by_bin or (cfg.get("bin_by_bin") if cfg else False)
+
+    if args.weighted_edep:
+        depth_model = "weighted"
 
     if depth_model == "dionne-exp" and (dionne_A is None or dionne_n is None):
         print("Error: --depth-model dionne-exp requires --dionne-A and --dionne-n (or config values).")

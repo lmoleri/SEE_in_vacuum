@@ -12,6 +12,7 @@
 #include "G4SystemOfUnits.hh"
 #include "G4AnalysisManager.hh"
 #include "G4VProcess.hh"
+#include <cmath>
 
 SteppingAction::SteppingAction(RunAction* runAction, EventAction* eventAction)
     : G4UserSteppingAction(),
@@ -76,6 +77,10 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         if (edep > 0.) {
             fEventAction->AddPrimaryEdep(edep);
         }
+        const G4double stepLen = step->GetStepLength();
+        if (stepLen > 0.) {
+            fEventAction->AddPrimaryTrackLength(stepLen);
+        }
     }
 
     // Track primary particle residual energy and other metrics (for all primary particles)
@@ -107,6 +112,39 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     // Electron-specific tracking below
     if (particleName != "e-") {
         return;
+    }
+
+    // Depth-weighted primary electron energy deposition in Al2O3.
+    // Use only the entrance side (direction of the primary particle).
+    if (fEventAction && isPrimary && preName == "Al2O3") {
+        const G4double edep = step->GetTotalEnergyDeposit();
+        if (edep > 0. && fRunAction) {
+            const G4double alphaInvNm = fRunAction->GetSeyAlphaInvNm();
+            if (alphaInvNm > 0.) {
+                const G4double thickness = fRunAction->GetSampleThickness();
+                const G4double zmin = -0.5 * thickness;
+                const G4double zmax = 0.5 * thickness;
+                const G4double z = prePoint->GetPosition().z();
+                const G4double dirZ = fRunAction->GetPrimaryDirectionZ();
+                G4double depth = (dirZ >= 0.) ? (z - zmin) : (zmax - z);
+                if (depth < 0.) depth = 0.;
+                if (depth > thickness) depth = thickness;
+                const G4double depthNm = depth / nm;
+                const G4double weight = std::exp(-alphaInvNm * depthNm);
+                fEventAction->AddPrimaryEdepWeighted(edep * weight);
+                auto* analysisManager = G4AnalysisManager::Instance();
+                if (analysisManager) {
+                    const G4int depthId = fRunAction->GetEdepDepthPrimaryId();
+                    if (depthId >= 0) {
+                        analysisManager->FillH1(depthId, depthNm, edep / eV);
+                    }
+                    const G4int depthWeightedId = fRunAction->GetEdepDepthPrimaryWeightedId();
+                    if (depthWeightedId >= 0) {
+                        analysisManager->FillH1(depthWeightedId, depthNm, edep * weight / eV);
+                    }
+                }
+            }
+        }
     }
 
     // 1b) Capture per-step energy transfer in Al2O3 when PAI is enabled.

@@ -30,6 +30,12 @@ Options:
 
 ## Processing Modes
 
+## Geant4 Energy-Deposition Assumption
+
+This workflow uses Geant4 **only for energy deposition**; secondary electrons are computed in the custom MC.
+In that case, **large production cuts are desirable** because they suppress Geant4 secondary creation and leave
+energy as local deposition. Step size still matters for thin layers, but production cuts do not need to be small.
+
 ### 1. Histogram Sampling (Default)
 
 Samples energy deposition values from the histogram distribution. This treats the histogram as a probability distribution and samples from it.

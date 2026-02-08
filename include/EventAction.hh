@@ -19,6 +19,8 @@ public:
 
     // Called from SteppingAction to accumulate primary e- energy deposition
     void AddPrimaryEdep(G4double edep);
+    void AddPrimaryEdepWeighted(G4double edepWeighted);
+    void AddPrimaryTrackLength(G4double stepLength);
 
     // Count microscopic energy deposition interactions in Al2O3 per event
     void AddEdepInteraction();
@@ -31,6 +33,8 @@ public:
 private:
     RunAction* fRunAction;
     G4double fEdepPrimary; // total primary e- energy deposited in Al2O3 for this event
+    G4double fEdepPrimaryWeighted; // depth-weighted primary e- energy deposition
+    G4double fPrimaryTrackLength; // primary track length in Al2O3 for this event
     G4int fNMicroscopicEdep; // number of energy-depositing steps in Al2O3 for this event
     G4double fPrimaryResidualEnergy;
     G4int fPrimaryEndLocation;

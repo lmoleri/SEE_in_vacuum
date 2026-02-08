@@ -10,6 +10,8 @@ This document describes the implementation of a custom Monte Carlo method to cal
 
 The Geant4 simulation provides energy deposition $\Delta E$ per muon-shell interaction event. This is the total energy deposited in the shell material by a muon and its secondaries.
 
+**Note on Geant4 cuts:** In this workflow Geant4 is used only for energy deposition, and secondaries are computed in the custom MC. In that case, **large production cuts are desirable** because they suppress Geant4 secondary creation and leave energy as local deposition.
+
 ### Step 2: Internal Free Electron Production
 
 The average energy required to produce one internal free electron is:

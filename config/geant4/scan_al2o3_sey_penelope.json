@@ -1,5 +1,6 @@
 {
   "sample_thickness_nm": [50, 100, 200],
+  "substrate_thickness_nm": [0],
   "primary_energy_MeV": [0.00001, 0.00002, 0.00005, 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01],
   "em_model": "Penelope",
   "material": "Al2O3",
@@ -7,5 +8,5 @@
   "pai_enabled": false,
   "livermore_atomic_deexcitation": true,
   "events": 50000,
-  "output_dir": "results/scan_al2o3_sey_penelope_thick50-100-200nm_energy10eV-10keV_events50k"
+  "output_dir": "results/scan_al2o3_sey_penelope_thick50-100-200nm_sub0nm_energy10eV-10keV_events50k"
 }

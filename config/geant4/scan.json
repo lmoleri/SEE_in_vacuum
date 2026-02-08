@@ -2,6 +2,9 @@
   "sample_thickness_nm": [
     5
   ],
+  "substrate_thickness_nm": [
+    0
+  ],
   "primary_energy_MeV": [
     0.0001,
     0.0002,
@@ -19,5 +22,5 @@
   "primary_particle": "e-",
   "pai_enabled": false,
   "events": 10000,
-  "output_dir": "results/scan_thick5nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope"
+  "output_dir": "results/scan_thick5nm_sub0nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope"
 }

@@ -21,6 +21,8 @@ public:
     virtual G4VPhysicalVolume* Construct();
     G4double GetSampleThickness() const;
     void SetSampleThickness(G4double thickness);
+    G4double GetSubstrateThickness() const;
+    void SetSubstrateThickness(G4double thickness);
 
 private:
     void DefineMaterials();
@@ -28,17 +30,21 @@ private:
 
     G4Material* fWorldMaterial;
     G4Material* fAl2O3Material;
+    G4Material* fSiMaterial;
     
     G4LogicalVolume* fWorldLogical;
     G4LogicalVolume* fAl2O3Logical;
+    G4LogicalVolume* fSiLogical;
     
     G4VPhysicalVolume* fWorldPhysical;
     G4VPhysicalVolume* fAl2O3Physical;
+    G4VPhysicalVolume* fSiPhysical;
 
     // Region used for applying the PAI model
     G4Region* fAl2O3Region = nullptr;
 
     G4double fSampleThickness = 0.;
+    G4double fSubstrateThickness = 0.;
 };
 
 #endif

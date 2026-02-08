@@ -10,6 +10,8 @@ EventAction::EventAction(RunAction* runAction)
     : G4UserEventAction(),
       fRunAction(runAction),
       fEdepPrimary(0.),
+      fEdepPrimaryWeighted(0.),
+      fPrimaryTrackLength(0.),
       fNMicroscopicEdep(0),
       fPrimaryResidualEnergy(0.),
       fPrimaryEndLocation(0),
@@ -27,6 +29,8 @@ void EventAction::BeginOfEventAction(const G4Event*)
 {
     // Reset per-event accumulator
     fEdepPrimary = 0.;
+    fEdepPrimaryWeighted = 0.;
+    fPrimaryTrackLength = 0.;
     fNMicroscopicEdep = 0;
     fPrimaryResidualEnergy = 0.;
     fPrimaryEndLocation = 0;
@@ -43,6 +47,12 @@ void EventAction::EndOfEventAction(const G4Event* event)
     // Histogram ID 0: primary particle energy deposition in Al2O3
     // Convert from internal units (keV) to eV for display
     analysisManager->FillH1(0, fEdepPrimary / eV);
+    if (fRunAction && fRunAction->GetEdepPrimaryWeightedId() >= 0) {
+        analysisManager->FillH1(fRunAction->GetEdepPrimaryWeightedId(), fEdepPrimaryWeighted / eV);
+    }
+    if (fRunAction && fRunAction->GetPrimaryTrackLengthId() >= 0) {
+        analysisManager->FillH1(fRunAction->GetPrimaryTrackLengthId(), fPrimaryTrackLength / nm);
+    }
 
     // Histogram ID 2: number of microscopic energy-depositing steps per event
     analysisManager->FillH1(2, static_cast<G4double>(fNMicroscopicEdep));
@@ -99,6 +109,18 @@ void EventAction::EndOfEventAction(const G4Event* event)
 void EventAction::AddPrimaryEdep(G4double edep)
 {
     fEdepPrimary += edep;
+}
+
+void EventAction::AddPrimaryEdepWeighted(G4double edepWeighted)
+{
+    fEdepPrimaryWeighted += edepWeighted;
+}
+
+void EventAction::AddPrimaryTrackLength(G4double stepLength)
+{
+    if (stepLength > 0.) {
+        fPrimaryTrackLength += stepLength;
+    }
 }
 
 void EventAction::AddEdepInteraction()
