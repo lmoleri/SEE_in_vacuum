@@ -24,7 +24,9 @@
 PhysicsList::PhysicsList(const G4String& emModel)
     : fEmModel(emModel),
       fPaiEnabledOverride(-1),
-      fLivermoreAtomicDeexcitationOverride(-1)
+      fLivermoreAtomicDeexcitationOverride(-1),
+      fAtomicDeexcitationOverride(-1),
+      fDeexcitationIgnoreCutOverride(-1)
 {
     ConfigureEmPhysics();
     RegisterPhysics(new G4DecayPhysics());               // Decay physics
@@ -71,6 +73,16 @@ void PhysicsList::SetLivermoreAtomicDeexcitationOverride(G4bool enabled)
     fLivermoreAtomicDeexcitationOverride = enabled ? 1 : 0;
 }
 
+void PhysicsList::SetAtomicDeexcitationOverride(G4bool enabled)
+{
+    fAtomicDeexcitationOverride = enabled ? 1 : 0;
+}
+
+void PhysicsList::SetDeexcitationIgnoreCutOverride(G4bool enabled)
+{
+    fDeexcitationIgnoreCutOverride = enabled ? 1 : 0;
+}
+
 void PhysicsList::ConstructProcess()
 {
     // Enforce low-energy tracking thresholds before building EM tables.
@@ -78,7 +90,26 @@ void PhysicsList::ConstructProcess()
     emParams->SetMinEnergy(0.1 * eV);
     emParams->SetLowestElectronEnergy(0.1 * eV);
     emParams->SetLowestMuHadEnergy(0.1 * eV);
-    if (fLivermoreAtomicDeexcitationOverride >= 0) {
+
+    if (fAtomicDeexcitationOverride >= 0) {
+        const G4bool enabled = (fAtomicDeexcitationOverride > 0);
+        emParams->SetFluo(enabled);
+        emParams->SetAuger(enabled);
+        // Respect production cuts when deexcitation is disabled
+        if (!enabled) {
+            emParams->SetDeexcitationIgnoreCut(false);
+        }
+        G4cout << "[EM] Atomic deexcitation (Fluo/Auger) "
+               << (enabled ? "enabled" : "disabled") << " via config override" << G4endl;
+    }
+    if (fDeexcitationIgnoreCutOverride >= 0) {
+        const G4bool ignoreCuts = (fDeexcitationIgnoreCutOverride > 0);
+        emParams->SetDeexcitationIgnoreCut(ignoreCuts);
+        G4cout << "[EM] DeexcitationIgnoreCut set to "
+               << (ignoreCuts ? "true" : "false") << " via config override" << G4endl;
+    }
+
+    if (fAtomicDeexcitationOverride < 0 && fLivermoreAtomicDeexcitationOverride >= 0) {
         G4String model = fEmModel;
         model.toLower();
         if (model == "g4emlivermorephysics" || model == "livermore" || model == "livermorephysics") {

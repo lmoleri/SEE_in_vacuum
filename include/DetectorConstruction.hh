@@ -23,6 +23,10 @@ public:
     void SetSampleThickness(G4double thickness);
     G4double GetSubstrateThickness() const;
     void SetSubstrateThickness(G4double thickness);
+    G4double GetSampleRadius() const;
+    void SetSampleRadius(G4double radius);
+    G4double GetMaxStep() const;
+    void SetMaxStep(G4double maxStep);
 
 private:
     void DefineMaterials();
@@ -45,6 +49,8 @@ private:
 
     G4double fSampleThickness = 0.;
     G4double fSubstrateThickness = 0.;
+    G4double fSampleRadius = 0.;
+    G4double fMaxStep = 0.;
 };
 
 #endif

@@ -12,6 +12,8 @@ public:
 
     void SetPaiEnabledOverride(G4bool enabled);
     void SetLivermoreAtomicDeexcitationOverride(G4bool enabled);
+    void SetAtomicDeexcitationOverride(G4bool enabled);
+    void SetDeexcitationIgnoreCutOverride(G4bool enabled);
 
     // Configure physics processes
     virtual void ConstructProcess() override;
@@ -24,6 +26,8 @@ private:
     G4String fEmModel;
     G4int fPaiEnabledOverride;
     G4int fLivermoreAtomicDeexcitationOverride;
+    G4int fAtomicDeexcitationOverride;
+    G4int fDeexcitationIgnoreCutOverride;
 };
 
 #endif

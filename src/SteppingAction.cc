@@ -142,6 +142,33 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
                     if (depthWeightedId >= 0) {
                         analysisManager->FillH1(depthWeightedId, depthNm, edep * weight / eV);
                     }
+                    const G4int depthCountsId = fRunAction->GetEdepDepthPrimaryCountsId();
+                    if (depthCountsId >= 0) {
+                        analysisManager->FillH1(depthCountsId, depthNm, 1.0);
+                    }
+                }
+            }
+        }
+    }
+
+    // Record primary electron track length vs depth in Al2O3 (path-length weighting).
+    if (isPrimary && preName == "Al2O3" && fRunAction) {
+        const G4double stepLen = step->GetStepLength();
+        if (stepLen > 0.) {
+            const G4double thickness = fRunAction->GetSampleThickness();
+            const G4double zmin = -0.5 * thickness;
+            const G4double zmax = 0.5 * thickness;
+            const G4double z = prePoint->GetPosition().z();
+            const G4double dirZ = fRunAction->GetPrimaryDirectionZ();
+            G4double depth = (dirZ >= 0.) ? (z - zmin) : (zmax - z);
+            if (depth < 0.) depth = 0.;
+            if (depth > thickness) depth = thickness;
+            const G4double depthNm = depth / nm;
+            auto* analysisManager = G4AnalysisManager::Instance();
+            if (analysisManager) {
+                const G4int trackDepthId = fRunAction->GetPrimaryTrackLengthDepthId();
+                if (trackDepthId >= 0) {
+                    analysisManager->FillH1(trackDepthId, depthNm, stepLen / nm);
                 }
             }
         }

@@ -18,6 +18,8 @@ DetectorConstruction::DetectorConstruction()
 {
     fSampleThickness = 20.0 * nm;
     fSubstrateThickness = 0.0;
+    fSampleRadius = 100.0 * nm;
+    fMaxStep = 0.5 * nm;
 }
 
 DetectorConstruction::~DetectorConstruction()
@@ -99,10 +101,11 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
     // Al2O3 layer - cylindrical disk
     // Thickness and diameter are configurable (defaults: 20 nm, 200 nm)
     G4double thickness = fSampleThickness > 0. ? fSampleThickness : 20.0 * nm;
-    G4double radius = 100.0 * nm;  // radius = diameter/2 (diameter = 200 nm)
+    G4double radius = (fSampleRadius > 0.) ? fSampleRadius : 100.0 * nm;
     G4double substrateThickness = fSubstrateThickness;
 
     fSampleThickness = thickness;
+    fSampleRadius = radius;
     
     G4Tubs* al2o3Solid = new G4Tubs("Al2O3",
                                     0.0,           // inner radius
@@ -116,8 +119,10 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
                                         "Al2O3");
 
     // Constrain step length inside Al2O3 for depth-resolved energy deposition.
-    // 0.5 nm is a pragmatic compromise between accuracy and speed.
-    fAl2O3Logical->SetUserLimits(new G4UserLimits(0.5 * nm));
+    // Default is 0.5 nm unless overridden by configuration.
+    if (fMaxStep > 0.) {
+        fAl2O3Logical->SetUserLimits(new G4UserLimits(fMaxStep));
+    }
     
     // Position the Al2O3 layer at the origin, inside the world
     fAl2O3Physical = new G4PVPlacement(
@@ -175,6 +180,9 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
     G4cout << "  Thickness: " << fSampleThickness / nm << " nm" << G4endl;
     G4cout << "  Diameter: " << 2.0 * radius / nm << " nm" << G4endl;
     G4cout << "  Volume: " << M_PI * radius * radius * thickness / (nm*nm*nm) << " nm³" << G4endl;
+    if (fMaxStep > 0.) {
+        G4cout << "  Max step: " << fMaxStep / nm << " nm" << G4endl;
+    }
     if (fSiLogical && substrateThickness > 0.) {
         G4cout << "Si substrate:" << G4endl;
         G4cout << "  Thickness: " << substrateThickness / nm << " nm" << G4endl;
@@ -208,4 +216,28 @@ void DetectorConstruction::SetSubstrateThickness(G4double thickness)
         return;
     }
     fSubstrateThickness = thickness;
+}
+
+G4double DetectorConstruction::GetSampleRadius() const
+{
+    return fSampleRadius;
+}
+
+void DetectorConstruction::SetSampleRadius(G4double radius)
+{
+    if (radius > 0.) {
+        fSampleRadius = radius;
+    }
+}
+
+G4double DetectorConstruction::GetMaxStep() const
+{
+    return fMaxStep;
+}
+
+void DetectorConstruction::SetMaxStep(G4double maxStep)
+{
+    if (maxStep > 0.) {
+        fMaxStep = maxStep;
+    }
 }

@@ -138,6 +138,85 @@ as local deposition**.
 Example output (Al2O3 region, 5 nm scan):
 
 ```
+
+### Max step size in Al2O3
+
+To get meaningful **depth-resolved** energy deposition in a 5 nm layer, you may need
+to limit the **maximum step length** inside Al2O3. This is controlled by `max_step_nm`
+in the scan JSON:
+
+```json
+{
+  "max_step_nm": 0.1
+}
+```
+
+This **does not create secondaries**. It only forces Geant4 to break the primary
+track into smaller steps so you can resolve the depth profile.
+
+### Suppressing Geant4‑generated secondaries (electrons)
+
+If you are using Geant4 **only for energy deposition**, you typically want **no secondary
+electrons produced by Geant4**, because you handle multiplication in the custom MC.
+
+Two knobs matter:
+
+1. **Production cuts (range cuts)** — large cuts suppress low‑energy secondaries.
+2. **Atomic de‑excitation (Fluo/Auger)** — can still generate secondaries even when
+   cuts are large if `DeexcitationIgnoreCut` is true.
+
+Recommended settings in the scan JSON:
+
+```json
+{
+  "disable_deexcitation": true,
+  "deexcitation_ignore_cut": false
+}
+```
+
+These settings disable Fluo/Auger for all EM models and ensure any remaining de‑excitation
+respects cuts.
+
+## Baseline transport diagnostics (5 nm Al2O3, no substrate)
+
+To sanity-check Geant4 transport before fitting SEY, we run a **baseline scan**
+for 5 nm Al2O3 with no substrate and inspect several diagnostics.
+
+**Baseline result folders:**
+- Penelope: `results/scan_dionne_validation_5nm_baseline_penelope_sub0nm_r100nm`
+- Livermore: `results/scan_dionne_validation_5nm_baseline_livermore_sub0nm_r100nm`
+
+**Key plots (all in `plots/MC_electrons_on_shell_dionne-model/diagnostics_edep_depth/`):**
+- `edep_depth_vs_energy_baseline_penelope(.pdf/.png)`  
+  `edep_depth_vs_energy_baseline_livermore(.pdf/.png)`  
+  Heatmap of **energy deposition vs depth** (primary e- only). Bright near 0 depth
+  indicates deposition happens close to the entrance surface.
+- `edep_depth_weighted_vs_energy_baseline_*(.pdf/.png)`  
+  Same as above, but weighted by escape probability `exp(-alpha z)`.
+- `tracklen_depth_vs_energy_*_baseline.png`  
+  **Primary track length vs depth** (path-length weighted). This answers
+  “where the primary travels,” not just where it deposits energy.
+- `mean_depth_tracklen_vs_energy_*_baseline.png`  
+  Mean depth of deposition and mean primary track length vs energy,
+  with a 5 nm reference line.
+- `full_edep_fraction_vs_energy_*_baseline.png`  
+  Fraction of events with `EdepPrimary >= 0.98 E0` (a proxy for “full stopping”).
+- `end_volume_fraction_vs_energy_*_baseline.png`  
+  Fraction of events ending in **Al2O3 / World / OutOfWorld / Other**.
+
+**dE/dx diagnostics (in `plots/MC_electrons_on_shell_dionne-model/diagnostics_dedx/`):**
+- `dedx_vs_energy_baseline_penelope.pdf`
+- `dedx_vs_energy_baseline_livermore.pdf`
+
+### Notes on depth vs track-length diagnostics
+
+`EdepDepthPrimary` is **energy deposition vs depth** (energy-weighted).
+It is normal for this to peak near the entrance surface because low-energy
+electrons deposit energy quickly.
+
+`PrimaryTrackLengthDepth` is **track length vs depth** (path-length weighted),
+and is the correct diagnostic for “where the primary actually travels” inside
+the film.
 gamma cut: 1 mm -> ~7.1 keV
 e- cut:    1 mm -> ~826 keV
 e+ cut:    1 mm -> ~791 keV

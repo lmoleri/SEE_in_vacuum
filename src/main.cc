@@ -202,6 +202,10 @@ int main(int argc, char** argv)
     bool paiEnabled = true;
     bool livermoreDeexcitationOverride = false;
     bool livermoreDeexcitationEnabled = true;
+    bool atomicDeexcitationOverride = false;
+    bool atomicDeexcitationEnabled = true;
+    bool deexcitationIgnoreCutOverride = false;
+    bool deexcitationIgnoreCutEnabled = true;
     std::string emModel = "PAI";
     std::string emModelLower = "pai";
     if (isJsonScan) {
@@ -213,6 +217,16 @@ int main(int argc, char** argv)
         }
         if (ParseBool(jsonContent, "pai_enabled", paiEnabled)) {
             paiOverride = true;
+        }
+        bool disableDeexcitation = false;
+        if (ParseBool(jsonContent, "disable_deexcitation", disableDeexcitation)) {
+            atomicDeexcitationOverride = true;
+            atomicDeexcitationEnabled = !disableDeexcitation;
+        } else if (ParseBool(jsonContent, "atomic_deexcitation", atomicDeexcitationEnabled)) {
+            atomicDeexcitationOverride = true;
+        }
+        if (ParseBool(jsonContent, "deexcitation_ignore_cut", deexcitationIgnoreCutEnabled)) {
+            deexcitationIgnoreCutOverride = true;
         }
         if (ParseBool(jsonContent, "livermore_atomic_deexcitation", livermoreDeexcitationEnabled)) {
             livermoreDeexcitationOverride = true;
@@ -228,6 +242,12 @@ int main(int argc, char** argv)
     auto* physicsList = new PhysicsList(emModel.c_str());
     if (paiOverride) {
         physicsList->SetPaiEnabledOverride(paiEnabled);
+    }
+    if (atomicDeexcitationOverride) {
+        physicsList->SetAtomicDeexcitationOverride(atomicDeexcitationEnabled);
+    }
+    if (deexcitationIgnoreCutOverride) {
+        physicsList->SetDeexcitationIgnoreCutOverride(deexcitationIgnoreCutEnabled);
     }
     if (livermoreDeexcitationOverride) {
         physicsList->SetLivermoreAtomicDeexcitationOverride(livermoreDeexcitationEnabled);
@@ -254,12 +274,26 @@ int main(int argc, char** argv)
         auto thicknessNm = ParseArray(content, "sample_thickness_nm");
         auto energiesMeV = ParseArray(content, "primary_energy_MeV");
         auto substrateNm = ParseArray(content, "substrate_thickness_nm");
+        auto radiusNm = ParseArray(content, "sample_radius_nm");
+        double maxStepNm = 0.0;
+        bool maxStepOverride = ParseNumber(content, "max_step_nm", maxStepNm);
+        if (!maxStepOverride) {
+            maxStepOverride = ParseNumber(content, "al2o3_max_step_nm", maxStepNm);
+        }
         if (substrateNm.empty()) {
             double substrateSingle = 0.0;
             if (ParseNumber(content, "substrate_thickness_nm", substrateSingle)) {
                 substrateNm.push_back(substrateSingle);
             } else {
                 substrateNm.push_back(0.0);
+            }
+        }
+        if (radiusNm.empty()) {
+            double radiusSingle = 100.0;
+            if (ParseNumber(content, "sample_radius_nm", radiusSingle)) {
+                radiusNm.push_back(radiusSingle);
+            } else {
+                radiusNm.push_back(100.0);
             }
         }
         double events = 100000;
@@ -284,6 +318,12 @@ int main(int argc, char** argv)
             delete runManager;
             return 1;
         }
+        if (!(radiusNm.size() == 1 || radiusNm.size() == thicknessNm.size())) {
+            G4cerr << "Error: sample_radius_nm must have size 1 or match sample_thickness_nm."
+                   << G4endl;
+            delete runManager;
+            return 1;
+        }
 
         auto* runAction = actions->GetRunAction();
         if (!runAction) {
@@ -301,6 +341,10 @@ int main(int argc, char** argv)
         primaryGenerator->SetParticleName(primaryParticle);
         runAction->SetPrimaryParticleName(primaryParticle);
         runAction->SetEmModel(emModel);
+        if (maxStepOverride && maxStepNm > 0.) {
+            detector->SetMaxStep(maxStepNm * nm);
+            runAction->SetMaxStep(maxStepNm * nm);
+        }
         if (seyAlphaInvNm > 0.0) {
             runAction->SetSeyAlphaInvNm(seyAlphaInvNm);
         }
@@ -324,15 +368,29 @@ int main(int argc, char** argv)
         std::string autoDir;
         const std::string substrateList = JoinParams(substrateNm, "nm");
         const std::string substrateSuffix = "_sub" + substrateList;
+        const std::string radiusList = JoinParams(radiusNm, "nm");
+        const std::string radiusSuffix = "_r" + radiusList;
+        std::string stepSuffix;
+        if (maxStepOverride && maxStepNm > 0.) {
+            stepSuffix = "_step" + FormatParam(maxStepNm) + "nm";
+        }
         if (outputDir.empty()) {
             std::string thickList = JoinParams(thicknessNm, "nm");
             std::string energyList = JoinParams(energiesMeV, "MeV");
             autoDir = "scan_thick" + thickList + "_particle" + primaryParticle +
                       "_energy" + energyList +
                       substrateSuffix +
+                      radiusSuffix +
+                      stepSuffix +
                       "_events" + FormatParam(events);
         } else if (outputDir.find("_sub") == std::string::npos) {
             outputDir += substrateSuffix;
+        }
+        if (outputDir.find("_r") == std::string::npos) {
+            outputDir += radiusSuffix;
+        }
+        if (!stepSuffix.empty() && outputDir.find(stepSuffix) == std::string::npos) {
+            outputDir += stepSuffix;
         }
         std::filesystem::path baseDir = std::filesystem::current_path();
         if (baseDir.filename() == "build") {
@@ -354,10 +412,13 @@ int main(int argc, char** argv)
         for (size_t idx = 0; idx < thicknessNm.size(); ++idx) {
             const double thickness = thicknessNm[idx];
             const double substrate = (substrateNm.size() == 1) ? substrateNm[0] : substrateNm[idx];
+            const double radius = (radiusNm.size() == 1) ? radiusNm[0] : radiusNm[idx];
             detector->SetSampleThickness(thickness * nm);
             detector->SetSubstrateThickness(substrate * nm);
+            detector->SetSampleRadius(radius * nm);
             runAction->SetSampleThickness(thickness * nm);
             runAction->SetSubstrateThickness(substrate * nm);
+            runAction->SetSampleRadius(radius * nm);
             runManager->ReinitializeGeometry(true);
             UImanager->ApplyCommand("/run/initialize");
 
@@ -368,7 +429,8 @@ int main(int argc, char** argv)
 
                 std::string tag = outputDir + "/SEE_in_vacuum_thick" +
                                   FormatParam(thickness) + "nm_sub" +
-                                  FormatParam(substrate) + "nm_particle" +
+                                  FormatParam(substrate) + "nm_r" +
+                                  FormatParam(radius) + "nm_particle" +
                                   primaryParticle + "_energy" +
                                   FormatParam(energy) + "MeV_events" +
                                   FormatParam(events);

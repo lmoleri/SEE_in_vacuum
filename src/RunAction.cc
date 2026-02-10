@@ -97,6 +97,8 @@ RunAction::RunAction()
       fEmModel("PAI"),
       fSampleThickness(0.),
       fSubstrateThickness(0.),
+      fSampleRadius(0.),
+      fMaxStep(0.),
       fOutputTag("SEE_in_vacuum"),
       fPaiEnabled(false),
       fLivermoreAtomicDeexcitation(-1),
@@ -105,6 +107,8 @@ RunAction::RunAction()
       fEdepPrimaryWeightedId(-1),
       fEdepDepthPrimaryId(-1),
       fEdepDepthPrimaryWeightedId(-1),
+      fEdepDepthPrimaryCountsId(-1),
+      fPrimaryTrackLengthDepthId(-1),
       fPrimaryTrackLengthId(-1)
 {
 }
@@ -145,6 +149,20 @@ void RunAction::BeginOfRunAction(const G4Run*)
             fSubstrateThickness = det->GetSubstrateThickness();
         }
     }
+    if (fSampleRadius <= 0.) {
+        auto* det = dynamic_cast<const DetectorConstruction*>(
+            G4RunManager::GetRunManager()->GetUserDetectorConstruction());
+        if (det) {
+            fSampleRadius = det->GetSampleRadius();
+        }
+    }
+    if (fMaxStep <= 0.) {
+        auto* det = dynamic_cast<const DetectorConstruction*>(
+            G4RunManager::GetRunManager()->GetUserDetectorConstruction());
+        if (det) {
+            fMaxStep = det->GetMaxStep();
+        }
+    }
 
     static G4bool metaCreated = false;
     static G4bool histosCreated = false;
@@ -153,6 +171,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleDColumn("primaryEnergyMeV");
         analysisManager->CreateNtupleDColumn("sampleThicknessNm");
         analysisManager->CreateNtupleDColumn("substrateThicknessNm");
+        analysisManager->CreateNtupleDColumn("sampleRadiusNm");
         analysisManager->CreateNtupleDColumn("maxPrimaryEnergyMeV");
         analysisManager->CreateNtupleIColumn("paiEnabled");
         analysisManager->CreateNtupleSColumn("primaryParticle");
@@ -163,6 +182,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleIColumn("emittedElectrons");
         analysisManager->CreateNtupleDColumn("sey");
         analysisManager->CreateNtupleDColumn("minNonZeroPrimaryEdepEv");
+        analysisManager->CreateNtupleDColumn("maxStepNm");
         analysisManager->FinishNtuple();
         metaCreated = true;
     }
@@ -330,8 +350,10 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->SetH1YAxisTitle(stepLenId, "Number of steps");
 
         // Create depth profiles for primary electron energy deposition (unweighted + weighted).
+        // Tie binning to the enforced max step when available so smaller steps yield finer depth resolution.
         if (thicknessNm > 0.) {
-            const G4double depthBinNm = 0.05;
+            const G4double maxStepNm = (fMaxStep > 0.) ? (fMaxStep / nm) : 0.5;
+            const G4double depthBinNm = std::min(0.05, std::max(0.005, 0.5 * maxStepNm));
             const G4int maxDepthBins = 4000;
             const G4double idealDepthBins = std::ceil(thicknessNm / depthBinNm);
             const G4int depthBins = std::max(
@@ -355,6 +377,26 @@ void RunAction::BeginOfRunAction(const G4Run*)
             );
             analysisManager->SetH1XAxisTitle(fEdepDepthPrimaryWeightedId, "Depth from entrance (nm)");
             analysisManager->SetH1YAxisTitle(fEdepDepthPrimaryWeightedId, "Weighted energy deposition (eV)");
+
+            fEdepDepthPrimaryCountsId = analysisManager->CreateH1(
+                "EdepDepthPrimaryCounts",
+                "Primary e- energy-depositing step count vs depth in Al_{2}O_{3}",
+                depthBins,
+                0.,
+                thicknessNm
+            );
+            analysisManager->SetH1XAxisTitle(fEdepDepthPrimaryCountsId, "Depth from entrance (nm)");
+            analysisManager->SetH1YAxisTitle(fEdepDepthPrimaryCountsId, "Energy-depositing steps");
+
+            fPrimaryTrackLengthDepthId = analysisManager->CreateH1(
+                "PrimaryTrackLengthDepth",
+                "Primary e- track length vs depth in Al_{2}O_{3}",
+                depthBins,
+                0.,
+                thicknessNm
+            );
+            analysisManager->SetH1XAxisTitle(fPrimaryTrackLengthDepthId, "Depth from entrance (nm)");
+            analysisManager->SetH1YAxisTitle(fPrimaryTrackLengthDepthId, "Track length (nm)");
         }
 
         // Create a 1D histogram for depth-weighted energy deposition in Al2O3 (primary electron only).
@@ -528,21 +570,23 @@ void RunAction::EndOfRunAction(const G4Run* run)
         analysisManager->FillNtupleDColumn(0, fPrimaryEnergy / MeV);
         analysisManager->FillNtupleDColumn(1, fSampleThickness / nm);
         analysisManager->FillNtupleDColumn(2, fSubstrateThickness / nm);
-        analysisManager->FillNtupleDColumn(3, fMaxPrimaryEnergy / MeV);
-        analysisManager->FillNtupleIColumn(4, fPaiEnabled ? 1 : 0);
-        analysisManager->FillNtupleSColumn(5, fPrimaryParticleName);
-        analysisManager->FillNtupleSColumn(6, fEmModel);
-        analysisManager->FillNtupleIColumn(7, fLivermoreAtomicDeexcitation);
-        analysisManager->FillNtupleIColumn(8, fNPrimaryElectrons);
-        analysisManager->FillNtupleIColumn(9, fNSecondaryElectrons);
-        analysisManager->FillNtupleIColumn(10, fNEmittedElectrons);
+        analysisManager->FillNtupleDColumn(3, fSampleRadius / nm);
+        analysisManager->FillNtupleDColumn(4, fMaxPrimaryEnergy / MeV);
+        analysisManager->FillNtupleIColumn(5, fPaiEnabled ? 1 : 0);
+        analysisManager->FillNtupleSColumn(6, fPrimaryParticleName);
+        analysisManager->FillNtupleSColumn(7, fEmModel);
+        analysisManager->FillNtupleIColumn(8, fLivermoreAtomicDeexcitation);
+        analysisManager->FillNtupleIColumn(9, fNPrimaryElectrons);
+        analysisManager->FillNtupleIColumn(10, fNSecondaryElectrons);
+        analysisManager->FillNtupleIColumn(11, fNEmittedElectrons);
         const G4double sey = (fNPrimaryElectrons > 0)
                                  ? static_cast<G4double>(fNEmittedElectrons) /
                                        static_cast<G4double>(fNPrimaryElectrons)
                                  : 0.0;
-        analysisManager->FillNtupleDColumn(11, sey);
+        analysisManager->FillNtupleDColumn(12, sey);
         const G4double minNonZeroEdepEv = (fMinNonZeroEdep > 0.) ? (fMinNonZeroEdep / eV) : 0.0;
-        analysisManager->FillNtupleDColumn(12, minNonZeroEdepEv);
+        analysisManager->FillNtupleDColumn(13, minNonZeroEdepEv);
+        analysisManager->FillNtupleDColumn(14, fMaxStep / nm);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -618,6 +662,16 @@ void RunAction::SetSubstrateThickness(G4double thickness)
     fSubstrateThickness = thickness;
 }
 
+void RunAction::SetSampleRadius(G4double radius)
+{
+    fSampleRadius = radius;
+}
+
+void RunAction::SetMaxStep(G4double maxStep)
+{
+    fMaxStep = maxStep;
+}
+
 G4double RunAction::GetSampleThickness() const
 {
     return fSampleThickness;
@@ -626,6 +680,16 @@ G4double RunAction::GetSampleThickness() const
 G4double RunAction::GetSubstrateThickness() const
 {
     return fSubstrateThickness;
+}
+
+G4double RunAction::GetSampleRadius() const
+{
+    return fSampleRadius;
+}
+
+G4double RunAction::GetMaxStep() const
+{
+    return fMaxStep;
 }
 
 void RunAction::SetSeyAlphaInvNm(G4double alphaInvNm)
@@ -661,6 +725,16 @@ G4int RunAction::GetEdepDepthPrimaryId() const
 G4int RunAction::GetEdepDepthPrimaryWeightedId() const
 {
     return fEdepDepthPrimaryWeightedId;
+}
+
+G4int RunAction::GetEdepDepthPrimaryCountsId() const
+{
+    return fEdepDepthPrimaryCountsId;
+}
+
+G4int RunAction::GetPrimaryTrackLengthDepthId() const
+{
+    return fPrimaryTrackLengthDepthId;
 }
 
 G4int RunAction::GetPrimaryTrackLengthId() const

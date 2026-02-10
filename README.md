@@ -69,13 +69,14 @@ Example `config/geant4/scan.json`:
 {
   "sample_thickness_nm": [10, 20, 50],
   "substrate_thickness_nm": [0],
+  "sample_radius_nm": [100],
   "primary_energy_MeV": [0.5, 1.0, 2.0],
   "em_model": "PAI",
   "primary_particle": "e-",
   "pai_enabled": true,
   "livermore_atomic_deexcitation": true,
   "events": 100000,
-  "output_dir": "results/scan_thick10-20-50nm_sub0nm_particlee-_energy0p5-1-2MeV_events100000"
+  "output_dir": "results/scan_thick10-20-50nm_sub0nm_r100nm_particlee-_energy0p5-1-2MeV_events100000"
 }
 ```
 
@@ -102,15 +103,30 @@ If you are using Geant4 **only** to obtain energy deposition and compute seconda
 `pai_enabled` is only used when `em_model` is `"PAI"`.
 
 `livermore_atomic_deexcitation` is only used when `em_model` is `"G4EmLivermorePhysics"`
-(or `"livermore"`), and toggles atomic deexcitation (Fluo/Auger/PIXE).
+(or `"livermore"`), and toggles atomic deexcitation (Fluo/Auger) **for Livermore only**.
+
+`atomic_deexcitation` toggles atomic deexcitation (Fluo/Auger) **for all EM models**.
+Use this when you want to strictly suppress secondary electrons from atomic relaxation.
+
+`disable_deexcitation` is a convenience alias for `atomic_deexcitation: false`.
+
+`deexcitation_ignore_cut` controls whether atomic deexcitation ignores production cuts.
+Set this to `false` if you want large cuts to suppress deexcitation secondaries.
 
 `substrate_thickness_nm` sets the Si substrate thickness beneath the Al2O3 coating.
 Use `0` (default) for no substrate. When scanning, the array must be size 1 or match
 the length of `sample_thickness_nm`.
 
+`sample_radius_nm` sets the Al2O3 disk radius (default 100 nm). When scanning, the
+array must be size 1 or match the length of `sample_thickness_nm`.
+
+`max_step_nm` sets a **max step length** (G4UserLimits) inside Al2O3. This controls
+depth resolution for energy-deposition diagnostics. If omitted, the default is `0.5`
+nm. Use smaller values (e.g. `0.1`) when you want finer depth information.
+
 Output files are created inside `output_dir` for each combination. When `output_dir`
 is relative, it is resolved from the project root (not `build/`), e.g.:
-`results/scan_thick10-20-50nm_sub0nm_particlee-_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_sub0nm_particlee-_energy1MeV_events100000.root`
+`results/scan_thick10-20-50nm_sub0nm_r100nm_particlee-_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_sub0nm_r100nm_particlee-_energy1MeV_events100000.root`
 
 ## Outputs
 
@@ -126,8 +142,8 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
   - `ResidualEnergyVsLastProcess`: 2D residual energy vs last process category
   - `ResidualEnergyVsStopStatus`: 2D residual energy vs stop status category
   - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`,
-  `substrateThicknessNm`, `maxPrimaryEnergyMeV`, `paiEnabled`, `primaryParticle`,
-  `emModel`, and `livermoreAtomicDeexcitation`
+  `substrateThicknessNm`, `sampleRadiusNm`, `maxPrimaryEnergyMeV`, `paiEnabled`,
+  `primaryParticle`, `emModel`, and `livermoreAtomicDeexcitation`
   - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`, and other canvases saved with annotations
 
 ## Plotting
