@@ -136,8 +136,7 @@ def main():
         else:
             h = rec["h_depth"]
             hw = rec["h_depth_w"]
-        events = max(1, rec["n_events"])
-        scale = 1.0 / events
+        scale = 1.0
         s = 0.0
         sw = 0.0
         for b in range(1, n_depth_bins + 1):

@@ -239,5 +239,8 @@ void DetectorConstruction::SetMaxStep(G4double maxStep)
 {
     if (maxStep > 0.) {
         fMaxStep = maxStep;
+        if (fAl2O3Logical) {
+            fAl2O3Logical->SetUserLimits(new G4UserLimits(fMaxStep));
+        }
     }
 }

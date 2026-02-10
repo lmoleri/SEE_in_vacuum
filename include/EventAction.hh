@@ -29,6 +29,7 @@ public:
     void UpdatePrimaryLastVolume(const G4String& volumeName);
     void UpdatePrimaryLastProcess(const G4String& processName);
     void UpdatePrimaryStopStatus(G4int status);
+    void UpdatePrimaryExitCandidate(G4int exitClass, G4double kineticEnergy);
 
 private:
     RunAction* fRunAction;
@@ -41,6 +42,9 @@ private:
     G4int fPrimaryLastLocation;
     G4String fPrimaryLastProcess;
     G4int fPrimaryStopStatus;
+    G4bool fHasPrimaryExitCandidate;
+    G4int fPrimaryExitClassCandidate;
+    G4double fPrimaryExitEnergyCandidate;
 };
 
 #endif

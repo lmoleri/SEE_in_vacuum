@@ -69,8 +69,7 @@ def main():
 
         h = h_counts.Clone()
         h.SetDirectory(0)
-        if n_events > 0:
-            h.Scale(1.0 / n_events)
+        # Histograms are stored per-event in results.
 
         c = ROOT.TCanvas(f"c_{idx}", "Edep depth counts", 900, 650)
         h.SetTitle("")

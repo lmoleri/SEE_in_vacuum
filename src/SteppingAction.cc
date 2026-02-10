@@ -9,6 +9,7 @@
 #include "G4ParticleTable.hh"
 #include "G4VPhysicalVolume.hh"
 #include "G4LogicalVolume.hh"
+#include "G4RunManager.hh"
 #include "G4SystemOfUnits.hh"
 #include "G4AnalysisManager.hh"
 #include "G4VProcess.hh"
@@ -35,12 +36,12 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     const auto* preVol  = prePoint->GetPhysicalVolume();
     const auto* postVol = postPoint->GetPhysicalVolume();
 
-    if (!preVol || !postVol) {
+    if (!preVol) {
         return;
     }
 
     const G4String preName  = preVol->GetName();
-    const G4String postName = postVol->GetName();
+    const G4String postName = postVol ? postVol->GetName() : "OutOfWorld";
 
     // Count any energy-depositing step in Al2O3 (all particles)
     if (fEventAction && preName == "Al2O3") {
@@ -59,8 +60,9 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         const G4double stepLen = step->GetStepLength();
         if (stepLen > 0.) {
             auto* analysisManager = G4AnalysisManager::Instance();
-            if (analysisManager) {
-                analysisManager->FillH1(6, stepLen / nm);
+            const G4int stepLenId = fRunAction->GetStepLengthAl2O3Id();
+            if (analysisManager && stepLenId >= 0) {
+                analysisManager->FillH1(stepLenId, stepLen / nm);
             }
         }
     }
@@ -119,20 +121,20 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     if (fEventAction && isPrimary && preName == "Al2O3") {
         const G4double edep = step->GetTotalEnergyDeposit();
         if (edep > 0. && fRunAction) {
+            const G4double thickness = fRunAction->GetSampleThickness();
+            const G4double zmin = -0.5 * thickness;
+            const G4double zmax = 0.5 * thickness;
+            const G4double z = prePoint->GetPosition().z();
+            const G4double dirZ = fRunAction->GetPrimaryDirectionZ();
+            G4double depth = (dirZ >= 0.) ? (z - zmin) : (zmax - z);
+            if (depth < 0.) depth = 0.;
+            if (depth > thickness) depth = thickness;
+            const G4double depthNm = depth / nm;
             const G4double alphaInvNm = fRunAction->GetSeyAlphaInvNm();
+            auto* analysisManager = G4AnalysisManager::Instance();
             if (alphaInvNm > 0.) {
-                const G4double thickness = fRunAction->GetSampleThickness();
-                const G4double zmin = -0.5 * thickness;
-                const G4double zmax = 0.5 * thickness;
-                const G4double z = prePoint->GetPosition().z();
-                const G4double dirZ = fRunAction->GetPrimaryDirectionZ();
-                G4double depth = (dirZ >= 0.) ? (z - zmin) : (zmax - z);
-                if (depth < 0.) depth = 0.;
-                if (depth > thickness) depth = thickness;
-                const G4double depthNm = depth / nm;
                 const G4double weight = std::exp(-alphaInvNm * depthNm);
                 fEventAction->AddPrimaryEdepWeighted(edep * weight);
-                auto* analysisManager = G4AnalysisManager::Instance();
                 if (analysisManager) {
                     const G4int depthId = fRunAction->GetEdepDepthPrimaryId();
                     if (depthId >= 0) {
@@ -145,6 +147,76 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
                     const G4int depthCountsId = fRunAction->GetEdepDepthPrimaryCountsId();
                     if (depthCountsId >= 0) {
                         analysisManager->FillH1(depthCountsId, depthNm, 1.0);
+                    }
+                    const G4int stepDepthId = fRunAction->GetEdepStepDepthPrimaryId();
+                    if (stepDepthId >= 0) {
+                        analysisManager->FillH2(stepDepthId, depthNm, edep / eV);
+                    }
+                }
+            }
+            if (fRunAction->IsVerboseStepDiagnostics()) {
+                const G4double preE = prePoint->GetKineticEnergy();
+                const G4double postE = postPoint->GetKineticEnergy();
+                const G4double frac = (preE > 0.) ? (edep / preE) : 0.0;
+                if (frac >= fRunAction->GetVerboseStepThresholdFrac()) {
+                    const auto slot = fRunAction->ConsumeVerboseStepSlot();
+                    if (slot >= 0) {
+                        const auto* proc = postPoint->GetProcessDefinedStep();
+                        const auto stepStatus = postPoint->GetStepStatus();
+                        const auto trackStatus = track->GetTrackStatus();
+                        const auto ntupleId = fRunAction->GetVerboseStepNtupleId();
+                        auto volumeCode = [](const G4String& name) -> G4int {
+                            if (name == "Al2O3") return 1;
+                            if (name == "World") return 2;
+                            if (name == "Si") return 3;
+                            if (name == "OutOfWorld") return 4;
+                            return 0;
+                        };
+                        auto processCode = [](const G4String& name) -> G4int {
+                            if (name == "msc") return 1;
+                            if (name == "eIoni") return 2;
+                            if (name == "eBrem") return 3;
+                            if (name == "Transportation") return 4;
+                            if (name == "eCoulombScattering") return 5;
+                            return 0;
+                        };
+                        if (analysisManager && ntupleId >= 0) {
+                            const auto* evt = G4RunManager::GetRunManager()->GetCurrentEvent();
+                            const auto eventId = evt ? evt->GetEventID() : -1;
+                            analysisManager->FillNtupleIColumn(ntupleId, 0, eventId);
+                            analysisManager->FillNtupleIColumn(ntupleId, 1, track->GetTrackID());
+                            analysisManager->FillNtupleIColumn(ntupleId, 2, track->GetCurrentStepNumber());
+                            analysisManager->FillNtupleDColumn(ntupleId, 3, depthNm);
+                            analysisManager->FillNtupleDColumn(ntupleId, 4, step->GetStepLength() / nm);
+                            analysisManager->FillNtupleDColumn(ntupleId, 5, edep / eV);
+                            analysisManager->FillNtupleDColumn(ntupleId, 6, preE / eV);
+                            analysisManager->FillNtupleDColumn(ntupleId, 7, postE / eV);
+                            analysisManager->FillNtupleDColumn(ntupleId, 8, frac);
+                            analysisManager->FillNtupleIColumn(ntupleId, 9, static_cast<G4int>(stepStatus));
+                            analysisManager->FillNtupleIColumn(ntupleId, 10, static_cast<G4int>(trackStatus));
+                            analysisManager->FillNtupleIColumn(ntupleId, 11, volumeCode(preName));
+                            analysisManager->FillNtupleIColumn(ntupleId, 12, volumeCode(postName));
+                            analysisManager->FillNtupleIColumn(ntupleId, 13,
+                                                               proc ? processCode(proc->GetProcessName())
+                                                                    : 0);
+                            analysisManager->FillNtupleSColumn(ntupleId, 14, preName);
+                            analysisManager->FillNtupleSColumn(ntupleId, 15, postName);
+                            analysisManager->FillNtupleSColumn(ntupleId, 16,
+                                                               proc ? proc->GetProcessName() : "None");
+                            analysisManager->AddNtupleRow(ntupleId);
+                        }
+                        G4cout << "[VerboseStep] slot=" << slot
+                               << " edep=" << edep / eV << " eV"
+                               << " preE=" << preE / eV << " eV"
+                               << " frac=" << frac
+                               << " depth=" << depthNm << " nm"
+                               << " stepLen=" << step->GetStepLength() / nm << " nm"
+                               << " preVol=" << preName
+                               << " postVol=" << postName
+                               << " proc=" << (proc ? proc->GetProcessName() : "None")
+                               << " stepStatus=" << stepStatus
+                               << " trackStatus=" << trackStatus
+                               << G4endl;
                     }
                 }
             }
@@ -194,6 +266,32 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         // essentially "stopped" electrons as emitted.
         const G4double eKin = postPoint->GetKineticEnergy();
         const G4double eThreshold = 1.0 * eV; // adjustable
+
+        // Diagnostics for primary electron exits: split by entrance/opposite/lateral side.
+        if (isPrimary && particleName == "e-") {
+            if (fEventAction && fRunAction) {
+                const G4double thickness = fRunAction->GetSampleThickness();
+                const G4double zMin = -0.5 * thickness;
+                const G4double zMax = 0.5 * thickness;
+                const G4double zExit = postPoint->GetPosition().z();
+                const G4double tol = 0.2 * nm;
+                const G4bool nearMin = (std::abs(zExit - zMin) <= tol);
+                const G4bool nearMax = (std::abs(zExit - zMax) <= tol);
+                const G4bool entranceAtMin = (fRunAction->GetPrimaryDirectionZ() >= 0.);
+
+                // 1=entrance-side exit, 2=opposite-side exit, 3=lateral/edge exit
+                G4int exitClass = 3;
+                if (nearMin || nearMax) {
+                    const G4bool entranceExit =
+                        (nearMin && entranceAtMin) || (nearMax && !entranceAtMin);
+                    exitClass = entranceExit ? 1 : 2;
+                }
+
+                // Keep only the most recent Al2O3->World crossing for this event.
+                // Final per-event filling is done in EventAction::EndOfEventAction.
+                fEventAction->UpdatePrimaryExitCandidate(exitClass, eKin);
+            }
+        }
 
         if (eKin > eThreshold) {
             fRunAction->AddEmittedElectron();

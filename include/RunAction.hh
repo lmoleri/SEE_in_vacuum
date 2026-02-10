@@ -48,8 +48,26 @@ public:
     G4int GetEdepDepthPrimaryId() const;
     G4int GetEdepDepthPrimaryWeightedId() const;
     G4int GetEdepDepthPrimaryCountsId() const;
+    G4int GetEdepStepDepthPrimaryId() const;
     G4int GetPrimaryTrackLengthDepthId() const;
     G4int GetPrimaryTrackLengthId() const;
+    G4int GetPrimaryExitClassId() const;
+    G4int GetPrimaryExitEnergyEntranceId() const;
+    G4int GetPrimaryExitEnergyOppositeId() const;
+    G4int GetPrimaryExitEnergyLateralId() const;
+    G4int GetStepLengthAl2O3Id() const;
+    G4int GetEdepVsStepsId() const;
+    G4int GetResidualVsEndVolumeId() const;
+    G4int GetResidualVsLastProcessId() const;
+    G4int GetResidualVsStopStatusId() const;
+    G4int GetVerboseStepNtupleId() const;
+    G4bool IsVerboseStepDiagnostics() const;
+    G4double GetVerboseStepThresholdFrac() const;
+    G4int GetVerboseStepMaxCount() const;
+    void SetVerboseStepDiagnostics(G4bool enabled);
+    void SetVerboseStepThresholdFrac(G4double frac);
+    void SetVerboseStepMaxCount(G4int maxCount);
+    G4int ConsumeVerboseStepSlot();
 
 private:
     void OptimizeHistogramInFile(const G4String& fileName);
@@ -71,11 +89,26 @@ private:
     G4int fEdepDepthPrimaryId;
     G4int fEdepDepthPrimaryWeightedId;
     G4int fEdepDepthPrimaryCountsId;
+    G4int fEdepStepDepthPrimaryId;
     G4int fPrimaryTrackLengthDepthId;
     G4int fPrimaryTrackLengthId;
+    G4int fPrimaryExitClassId;
+    G4int fPrimaryExitEnergyEntranceId;
+    G4int fPrimaryExitEnergyOppositeId;
+    G4int fPrimaryExitEnergyLateralId;
+    G4int fStepLengthAl2O3Id;
+    G4int fEdepVsStepsId;
+    G4int fResidualVsEndVolumeId;
+    G4int fResidualVsLastProcessId;
+    G4int fResidualVsStopStatusId;
+    G4int fVerboseStepNtupleId;
     G4String fOutputTag;
     G4bool fPaiEnabled;
     G4int fLivermoreAtomicDeexcitation;
+    G4bool fVerboseStepDiagnostics = false;
+    G4double fVerboseStepThresholdFrac = 0.9;
+    G4int fVerboseStepMaxCount = 1000;
+    G4int fVerboseStepUsed = 0;
 };
 
 #endif

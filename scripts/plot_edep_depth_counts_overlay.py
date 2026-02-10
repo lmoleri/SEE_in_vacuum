@@ -72,8 +72,7 @@ def main():
             )
         h = h_counts.Clone()
         h.SetDirectory(0)
-        if n_events > 0:
-            h.Scale(1.0 / n_events)
+        # Histograms are stored per-event in results.
         curves.append((energy_ev, h))
         f.Close()
 

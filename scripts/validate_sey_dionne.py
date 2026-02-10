@@ -213,6 +213,8 @@ def main():
     energies_eV = []
     sey_values = []
     sey_errors = []
+    edep_primary_means = []
+    edep_primary_errors = []
     thickness_nm = None
     em_model = None
     expected_model = _norm_model(args.em_model) if args.em_model else ""
@@ -240,6 +242,8 @@ def main():
             sample_thickness_val = None
             em_model_val = None
             particle_val = None
+            edep_primary_mean = float("nan")
+            edep_primary_err = 0.0
             if args.mc_source == "toy":
                 toy_hist = f.Get(args.toy_hist)
                 if not toy_hist:
@@ -267,6 +271,12 @@ def main():
                 sample_thickness_val = float(meta.sampleThicknessNm)
                 em_model_val = _as_str(meta.emModel)
                 particle_val = _as_str(meta.primaryParticle)
+                h_edep = base.Get("EdepPrimary")
+                if h_edep:
+                    edep_primary_mean = float(h_edep.GetMean())
+                    n_edep = float(h_edep.GetEntries())
+                    if n_edep > 0:
+                        edep_primary_err = float(h_edep.GetRMS()) / math.sqrt(n_edep)
                 base.Close()
             else:
                 meta = f.Get("RunMeta")
@@ -289,9 +299,17 @@ def main():
                 sample_thickness_val = float(meta.sampleThicknessNm)
                 em_model_val = _as_str(meta.emModel)
                 particle_val = _as_str(meta.primaryParticle)
+                h_edep = f.Get("EdepPrimary")
+                if h_edep:
+                    edep_primary_mean = float(h_edep.GetMean())
+                    n_edep = float(h_edep.GetEntries())
+                    if n_edep > 0:
+                        edep_primary_err = float(h_edep.GetRMS()) / math.sqrt(n_edep)
             energies_eV.append(energy_eV)
             sey_values.append(sey)
             sey_errors.append(err)
+            edep_primary_means.append(edep_primary_mean)
+            edep_primary_errors.append(edep_primary_err)
             if thickness_nm is None and sample_thickness_val is not None:
                 thickness_nm = sample_thickness_val
             if em_model is None and em_model_val is not None:
@@ -318,6 +336,8 @@ def main():
     energies_eV = [energies_eV[i] for i in order]
     sey_values = [sey_values[i] for i in order]
     sey_errors = [sey_errors[i] for i in order]
+    edep_primary_means = [edep_primary_means[i] for i in order]
+    edep_primary_errors = [edep_primary_errors[i] for i in order]
 
     # Analytic curve(s)
     min_e = min(energies_eV)
@@ -398,6 +418,8 @@ def main():
     frame.SetXTitle("Primary electron energy (eV)")
     frame.SetYTitle("Secondary electron yield (SEY)")
     frame.Draw("AXIS")
+    y1_min = frame.GetYaxis().GetXmin()
+    y1_max = frame.GetYaxis().GetXmax()
 
     gr_mc = ROOT.TGraphErrors(len(energies_eV))
     for i, (x, y, e) in enumerate(zip(energies_eV, sey_values, sey_errors)):
@@ -409,6 +431,51 @@ def main():
     gr_mc.SetLineColor(ROOT.kBlue + 2)
     gr_mc.SetMarkerColor(ROOT.kBlue + 2)
     gr_mc.Draw("P")
+
+    # Overlay mean EdepPrimary on a right-hand axis.
+    # Values are mapped to the left SEY axis for drawing.
+    gr_edep = None
+    edep_axis = None
+    valid_edep = [
+        i for i, v in enumerate(edep_primary_means)
+        if isinstance(v, (int, float)) and math.isfinite(v)
+    ]
+    if valid_edep:
+        edep_max = max(edep_primary_means[i] for i in valid_edep)
+        edep_axis_min = 0.0
+        edep_axis_max = edep_max * 1.15 if edep_max > 0 else 1.0
+        edep_span = edep_axis_max - edep_axis_min
+        y1_span = y1_max - y1_min
+
+        gr_edep = ROOT.TGraphErrors(len(valid_edep))
+        for ip, i in enumerate(valid_edep):
+            x = energies_eV[i]
+            v = edep_primary_means[i]
+            ve = edep_primary_errors[i] if i < len(edep_primary_errors) else 0.0
+            y = y1_min + ((v - edep_axis_min) / edep_span) * y1_span
+            ye = (ve / edep_span) * y1_span
+            gr_edep.SetPoint(ip, x, y)
+            gr_edep.SetPointError(ip, 0.0, ye)
+        gr_edep.SetLineColor(ROOT.kGray + 2)
+        gr_edep.SetMarkerColor(ROOT.kGray + 2)
+        gr_edep.SetLineWidth(2)
+        gr_edep.SetLineStyle(2)
+        gr_edep.SetMarkerStyle(24)
+        gr_edep.SetMarkerSize(1.0)
+        gr_edep.Draw("PL")
+
+        edep_axis = ROOT.TGaxis(
+            max_e * 1.05, y1_min, max_e * 1.05, y1_max,
+            edep_axis_min, edep_axis_max, 510, "+L"
+        )
+        edep_axis.SetTitle("Mean EdepPrimary per event (eV)")
+        edep_axis.SetTitleOffset(1.15)
+        edep_axis.SetLabelFont(42)
+        edep_axis.SetTitleFont(42)
+        edep_axis.SetLineColor(ROOT.kGray + 2)
+        edep_axis.SetLabelColor(ROOT.kGray + 2)
+        edep_axis.SetTitleColor(ROOT.kGray + 2)
+        edep_axis.Draw()
 
     colors = [ROOT.kRed + 1, ROOT.kGreen + 2, ROOT.kMagenta + 1]
     styles = [1, 2, 7]
@@ -492,6 +559,8 @@ def main():
             leg.AddEntry(gr, label, "l")
         else:
             leg.AddEntry(gr, f"{label} (E_a={pfit.Ea:.2g} eV)", "l")
+    if gr_edep:
+        leg.AddEntry(gr_edep, "Mean EdepPrimary (right axis)", "pl")
     if paper_graph:
         leg.AddEntry(paper_graph, args.paper_curve_label, "l")
     leg.Draw()

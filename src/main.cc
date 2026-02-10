@@ -302,6 +302,13 @@ int main(int argc, char** argv)
         std::string primaryParticle = ParseString(content, "primary_particle");
         double seyAlphaInvNm = 0.0;
         ParseNumber(content, "sey_alpha_inv_nm", seyAlphaInvNm);
+        double verboseStepFrac = 0.0;
+        ParseNumber(content, "verbose_step_fraction", verboseStepFrac);
+        double verboseStepMax = 0.0;
+        ParseNumber(content, "verbose_step_max", verboseStepMax);
+        bool verboseSteps = false;
+        bool verboseStepsSet = ParseBool(content, "verbose_step_diagnostics", verboseSteps);
+        bool verboseStepsEnable = verboseStepsSet && verboseSteps;
         if (primaryParticle.empty()) {
             primaryParticle = "e-";
         }
@@ -344,6 +351,15 @@ int main(int argc, char** argv)
         if (maxStepOverride && maxStepNm > 0.) {
             detector->SetMaxStep(maxStepNm * nm);
             runAction->SetMaxStep(maxStepNm * nm);
+        }
+        if (verboseStepsEnable) {
+            runAction->SetVerboseStepDiagnostics(true);
+            if (verboseStepFrac > 0.0) {
+                runAction->SetVerboseStepThresholdFrac(verboseStepFrac);
+            }
+            if (verboseStepMax > 0.0) {
+                runAction->SetVerboseStepMaxCount(static_cast<G4int>(verboseStepMax));
+            }
         }
         if (seyAlphaInvNm > 0.0) {
             runAction->SetSeyAlphaInvNm(seyAlphaInvNm);

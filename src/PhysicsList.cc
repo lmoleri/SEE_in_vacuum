@@ -16,6 +16,7 @@
 #include "G4MuIonisation.hh"
 #include "G4ParticleDefinition.hh"
 #include "G4ProcessManager.hh"
+#include "G4StepLimiter.hh"
 
 #include <algorithm>
 #include <cstdlib>
@@ -125,6 +126,19 @@ void PhysicsList::ConstructProcess()
 
     // Let the modular physics list construct all standard processes first
     G4VModularPhysicsList::ConstructProcess();
+
+    // Enforce user step limits for electrons/positrons (used in depth-resolved diagnostics).
+    auto stepLimiterIterator = GetParticleIterator();
+    stepLimiterIterator->reset();
+    while ((*stepLimiterIterator)()) {
+        G4ParticleDefinition* particle = stepLimiterIterator->value();
+        G4ProcessManager* pmanager = particle->GetProcessManager();
+        if (!pmanager) continue;
+        const G4String& name = particle->GetParticleName();
+        if (name == "e-" || name == "e+") {
+            pmanager->AddDiscreteProcess(new G4StepLimiter());
+        }
+    }
 
     if (fPaiEnabledOverride == 0) {
         G4cout << "[PAI] Disabled via config override" << G4endl;

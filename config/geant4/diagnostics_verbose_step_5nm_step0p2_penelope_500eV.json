@@ -1,0 +1,26 @@
+{
+  "sample_thickness_nm": [
+    5
+  ],
+  "substrate_thickness_nm": [
+    0
+  ],
+  "sample_radius_nm": [
+    100
+  ],
+  "max_step_nm": 0.2,
+  "primary_energy_MeV": [
+    0.0005
+  ],
+  "em_model": "Penelope",
+  "primary_particle": "e-",
+  "pai_enabled": false,
+  "disable_deexcitation": true,
+  "deexcitation_ignore_cut": false,
+  "verbose_step_diagnostics": true,
+  "verbose_step_fraction": 0.9,
+  "verbose_step_max": 500,
+  "events": 10000,
+  "output_dir": "results/diagnostics_verbose_step_5nm_sub0nm_r100nm_particlee-_energy500eV_events10000_modelPenelope_step0p2nm",
+  "sey_alpha_inv_nm": 0.009
+}

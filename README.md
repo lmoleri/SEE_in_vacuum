@@ -98,7 +98,7 @@ Example `config/geant4/scan.json`:
 
 If you are using Geant4 **only** to obtain energy deposition and compute secondary electrons in a custom MC:
 - **Large production cuts are desirable**. They suppress Geant4 secondaries and leave energy as local deposition, which is exactly what you want for a post‑processing SEY model.
-- **Step size still matters**. Even with large cuts, coarse stepping can smear the depth profile in a 5 nm layer. In that case, constrain the max step in Al2O3 (see `doc/SEY_DIONNE_VALIDATION.md` for diagnostics and guidance).
+- **Step size still matters**. Even with large cuts, coarse stepping can smear the depth profile in a 5 nm layer. In that case, constrain the max step in Al2O3 via `max_step_nm` (we attach `G4StepLimiter` for `e-`/`e+` so the limit is enforced). See `doc/SEY_DIONNE_VALIDATION.md` for diagnostics and guidance.
 
 `pai_enabled` is only used when `em_model` is `"PAI"`.
 

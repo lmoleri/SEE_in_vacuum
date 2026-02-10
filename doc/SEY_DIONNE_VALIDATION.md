@@ -135,8 +135,44 @@ If you are using Geant4 **only for energy deposition** and compute secondaries i
 this is actually desirable: **large production cuts suppress Geant4 secondaries and leave energy
 as local deposition**.
 
+**What “effective cuts” mean:** Geant4 uses *range cuts* (a length) and converts them to
+material‑dependent **energy thresholds** for each particle type. The printed “effective cuts”
+are those energy thresholds. If, for example, the e‑ cut is hundreds of keV in Al2O3, then
+Geant4 will *not* create any secondary electrons below that energy inside the Al2O3 region;
+their energy is deposited locally instead. This is exactly what we want when we do
+energy‑deposition‑only transport.
+
+**What the step settings mean:** the EM step settings (e.g., `MscRangeFactor`, `MscSkin`)
+control how Geant4 limits step lengths for multiple scattering and energy loss integration.
+They do **not** create or suppress secondaries; they only affect how finely a track is sampled
+in space. For nanometer‑scale layers, explicit user step limits are often required.
+
 Example output (Al2O3 region, 5 nm scan):
 
+```
+--- Effective production cuts ---
+  Region: Al2O3Region
+    Material: Al2O3
+       gamma cut:      1e+06 nm (1 mm) -> 7068 eV
+          e- cut:      1e+06 nm (1 mm) -> 826238 eV
+          e+ cut:      1e+06 nm (1 mm) -> 790663 eV
+      proton cut:      1e+06 nm (1 mm) -> 100000 eV
+  Region: DefaultRegionForTheWorld
+    Material: G4_Galactic
+       gamma cut:      1e+06 nm (1 mm) -> 0.1 eV
+          e- cut:      1e+06 nm (1 mm) -> 0.1 eV
+          e+ cut:      1e+06 nm (1 mm) -> 0.1 eV
+      proton cut:      1e+06 nm (1 mm) -> 100000 eV
+
+--- EM step settings (global) ---
+  MscRangeFactor (e-/e+): 0.08
+  MscGeomFactor: 2.5
+  MscSafetyFactor: 0.6
+  MscLambdaLimit: 1 mm
+  MscSkin: 3
+  LinearLossLimit: 0.01
+  MinKinEnergy: 0.1 eV
+  LowestElectronEnergy: 0.1 eV
 ```
 
 ### Max step size in Al2O3
@@ -153,6 +189,12 @@ in the scan JSON:
 
 This **does not create secondaries**. It only forces Geant4 to break the primary
 track into smaller steps so you can resolve the depth profile.
+
+**Important:** the max‑step limit only takes effect if a `G4StepLimiter` process is
+attached to the particle. We attach `G4StepLimiter` for `e-`/`e+` in
+`PhysicsList.cc`, and we also re‑apply the user limit when `SetMaxStep(...)` is called.
+Without this, Geant4 can take multi‑nanometer steps in a 5 nm layer and dump most of
+the energy in a single step near the entrance, which looks unphysical.
 
 ### Suppressing Geant4‑generated secondaries (electrons)
 
@@ -176,6 +218,10 @@ Recommended settings in the scan JSON:
 
 These settings disable Fluo/Auger for all EM models and ensure any remaining de‑excitation
 respects cuts.
+
+**Auger note:** Auger electrons are produced by atomic de‑excitation. If you want
+*zero* Geant4‑generated secondaries and only use the custom SEY model, keep
+de‑excitation disabled and cuts large.
 
 ## Baseline transport diagnostics (5 nm Al2O3, no substrate)
 

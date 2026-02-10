@@ -17,7 +17,10 @@ EventAction::EventAction(RunAction* runAction)
       fPrimaryEndLocation(0),
       fPrimaryLastLocation(0),
       fPrimaryLastProcess(""),
-      fPrimaryStopStatus(-1)
+      fPrimaryStopStatus(-1),
+      fHasPrimaryExitCandidate(false),
+      fPrimaryExitClassCandidate(0),
+      fPrimaryExitEnergyCandidate(0.)
 {
 }
 
@@ -37,6 +40,9 @@ void EventAction::BeginOfEventAction(const G4Event*)
     fPrimaryLastLocation = 0;
     fPrimaryLastProcess = "";
     fPrimaryStopStatus = -1;
+    fHasPrimaryExitCandidate = false;
+    fPrimaryExitClassCandidate = 0;
+    fPrimaryExitEnergyCandidate = 0.;
 }
 
 void EventAction::EndOfEventAction(const G4Event* event)
@@ -57,8 +63,14 @@ void EventAction::EndOfEventAction(const G4Event* event)
     // Histogram ID 2: number of microscopic energy-depositing steps per event
     analysisManager->FillH1(2, static_cast<G4double>(fNMicroscopicEdep));
 
-    // Histogram ID 0 (H2): primary edep vs step count per event
-    analysisManager->FillH2(0, fEdepPrimary / eV, static_cast<G4double>(fNMicroscopicEdep));
+    // 2D: primary edep vs step count per event
+    if (fRunAction && fRunAction->GetEdepVsStepsId() >= 0) {
+        analysisManager->FillH2(
+            fRunAction->GetEdepVsStepsId(),
+            fEdepPrimary / eV,
+            static_cast<G4double>(fNMicroscopicEdep)
+        );
+    }
 
     // Histogram ID 4: primary residual kinetic energy at end of event
     analysisManager->FillH1(4, fPrimaryResidualEnergy / eV);
@@ -69,9 +81,36 @@ void EventAction::EndOfEventAction(const G4Event* event)
     }
     analysisManager->FillH1(5, static_cast<G4double>(fPrimaryEndLocation));
 
-    // Histogram ID 1 (H2): residual energy vs end volume category
-    analysisManager->FillH2(1, fPrimaryResidualEnergy / eV,
-                            static_cast<G4double>(fPrimaryEndLocation));
+    // Fill exactly one primary-exit classification per event (if any exit occurred).
+    // Accept exits only when the final location is outside Al2O3.
+    const G4int finalLocation = (fPrimaryEndLocation != 0) ? fPrimaryEndLocation : fPrimaryLastLocation;
+    if (fRunAction && fHasPrimaryExitCandidate && finalLocation != 1) {
+        const G4int classId = fRunAction->GetPrimaryExitClassId();
+        if (classId >= 0) {
+            analysisManager->FillH1(classId, static_cast<G4double>(fPrimaryExitClassCandidate));
+        }
+        if (fPrimaryExitEnergyCandidate > 0.) {
+            if (fPrimaryExitClassCandidate == 1) {
+                const G4int id = fRunAction->GetPrimaryExitEnergyEntranceId();
+                if (id >= 0) analysisManager->FillH1(id, fPrimaryExitEnergyCandidate / eV);
+            } else if (fPrimaryExitClassCandidate == 2) {
+                const G4int id = fRunAction->GetPrimaryExitEnergyOppositeId();
+                if (id >= 0) analysisManager->FillH1(id, fPrimaryExitEnergyCandidate / eV);
+            } else if (fPrimaryExitClassCandidate == 3) {
+                const G4int id = fRunAction->GetPrimaryExitEnergyLateralId();
+                if (id >= 0) analysisManager->FillH1(id, fPrimaryExitEnergyCandidate / eV);
+            }
+        }
+    }
+
+    // 2D: residual energy vs end volume category
+    if (fRunAction && fRunAction->GetResidualVsEndVolumeId() >= 0) {
+        analysisManager->FillH2(
+            fRunAction->GetResidualVsEndVolumeId(),
+            fPrimaryResidualEnergy / eV,
+            static_cast<G4double>(fPrimaryEndLocation)
+        );
+    }
 
     auto processCategory = [](const G4String& name) -> G4int {
         if (name == "Transportation") return 1;
@@ -93,13 +132,23 @@ void EventAction::EndOfEventAction(const G4Event* event)
         }
     };
 
-    // Histogram ID 2 (H2): residual energy vs last process category
-    analysisManager->FillH2(2, fPrimaryResidualEnergy / eV,
-                            static_cast<G4double>(processCategory(fPrimaryLastProcess)));
+    // 2D: residual energy vs last process category
+    if (fRunAction && fRunAction->GetResidualVsLastProcessId() >= 0) {
+        analysisManager->FillH2(
+            fRunAction->GetResidualVsLastProcessId(),
+            fPrimaryResidualEnergy / eV,
+            static_cast<G4double>(processCategory(fPrimaryLastProcess))
+        );
+    }
 
-    // Histogram ID 3 (H2): residual energy vs stop status category
-    analysisManager->FillH2(3, fPrimaryResidualEnergy / eV,
-                            static_cast<G4double>(stopStatusCategory(fPrimaryStopStatus)));
+    // 2D: residual energy vs stop status category
+    if (fRunAction && fRunAction->GetResidualVsStopStatusId() >= 0) {
+        analysisManager->FillH2(
+            fRunAction->GetResidualVsStopStatusId(),
+            fPrimaryResidualEnergy / eV,
+            static_cast<G4double>(stopStatusCategory(fPrimaryStopStatus))
+        );
+    }
 
     if (fRunAction && fEdepPrimary > 0.) {
         fRunAction->UpdateMinNonZeroEdep(fEdepPrimary);
@@ -172,4 +221,14 @@ void EventAction::UpdatePrimaryLastProcess(const G4String& processName)
 void EventAction::UpdatePrimaryStopStatus(G4int status)
 {
     fPrimaryStopStatus = status;
+}
+
+void EventAction::UpdatePrimaryExitCandidate(G4int exitClass, G4double kineticEnergy)
+{
+    if (exitClass < 1 || exitClass > 3) {
+        return;
+    }
+    fHasPrimaryExitCandidate = true;
+    fPrimaryExitClassCandidate = exitClass;
+    fPrimaryExitEnergyCandidate = (kineticEnergy > 0.) ? kineticEnergy : 0.;
 }

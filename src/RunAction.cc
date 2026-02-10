@@ -22,6 +22,7 @@
 // ROOT headers for histogram optimization
 #include "TFile.h"
 #include "TH1.h"
+#include "TH2.h"
 #include "TString.h"
 
 namespace {
@@ -108,8 +109,19 @@ RunAction::RunAction()
       fEdepDepthPrimaryId(-1),
       fEdepDepthPrimaryWeightedId(-1),
       fEdepDepthPrimaryCountsId(-1),
+      fEdepStepDepthPrimaryId(-1),
       fPrimaryTrackLengthDepthId(-1),
-      fPrimaryTrackLengthId(-1)
+      fPrimaryTrackLengthId(-1),
+      fPrimaryExitClassId(-1),
+      fPrimaryExitEnergyEntranceId(-1),
+      fPrimaryExitEnergyOppositeId(-1),
+      fPrimaryExitEnergyLateralId(-1),
+      fStepLengthAl2O3Id(-1),
+      fEdepVsStepsId(-1),
+      fResidualVsEndVolumeId(-1),
+      fResidualVsLastProcessId(-1),
+      fResidualVsStopStatusId(-1),
+      fVerboseStepNtupleId(-1)
 {
 }
 
@@ -123,12 +135,12 @@ void RunAction::BeginOfRunAction(const G4Run*)
     fNSecondaryElectrons = 0;
     fNEmittedElectrons = 0;
     fMinNonZeroEdep = -1.;
+    fVerboseStepUsed = 0;
 
     auto* analysisManager = G4AnalysisManager::Instance();
 
     // Basic configuration
     analysisManager->SetVerboseLevel(1);
-    analysisManager->SetFirstHistoId(0);
 
     // Capture sample thickness from detector if not set
     if (fSampleThickness <= 0.) {
@@ -166,7 +178,10 @@ void RunAction::BeginOfRunAction(const G4Run*)
 
     static G4bool metaCreated = false;
     static G4bool histosCreated = false;
+    static G4bool verboseCreated = false;
+    static G4int verboseNtupleId = -1;
     if (!metaCreated) {
+        analysisManager->SetFirstHistoId(0);
         analysisManager->CreateNtuple("RunMeta", "Run metadata");
         analysisManager->CreateNtupleDColumn("primaryEnergyMeV");
         analysisManager->CreateNtupleDColumn("sampleThicknessNm");
@@ -185,6 +200,35 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleDColumn("maxStepNm");
         analysisManager->FinishNtuple();
         metaCreated = true;
+    }
+
+    if (fVerboseStepDiagnostics) {
+        if (!verboseCreated) {
+            verboseNtupleId = analysisManager->CreateNtuple("VerboseStepDiagnostics",
+                                                            "High-fraction energy-deposit steps");
+            analysisManager->CreateNtupleIColumn(verboseNtupleId, "eventId");
+            analysisManager->CreateNtupleIColumn(verboseNtupleId, "trackId");
+            analysisManager->CreateNtupleIColumn(verboseNtupleId, "stepNumber");
+            analysisManager->CreateNtupleDColumn(verboseNtupleId, "depthNm");
+            analysisManager->CreateNtupleDColumn(verboseNtupleId, "stepLenNm");
+            analysisManager->CreateNtupleDColumn(verboseNtupleId, "edepEv");
+            analysisManager->CreateNtupleDColumn(verboseNtupleId, "preEv");
+            analysisManager->CreateNtupleDColumn(verboseNtupleId, "postEv");
+            analysisManager->CreateNtupleDColumn(verboseNtupleId, "frac");
+            analysisManager->CreateNtupleIColumn(verboseNtupleId, "stepStatus");
+            analysisManager->CreateNtupleIColumn(verboseNtupleId, "trackStatus");
+            analysisManager->CreateNtupleIColumn(verboseNtupleId, "preVolCode");
+            analysisManager->CreateNtupleIColumn(verboseNtupleId, "postVolCode");
+            analysisManager->CreateNtupleIColumn(verboseNtupleId, "procCode");
+            analysisManager->CreateNtupleSColumn(verboseNtupleId, "preVol");
+            analysisManager->CreateNtupleSColumn(verboseNtupleId, "postVol");
+            analysisManager->CreateNtupleSColumn(verboseNtupleId, "process");
+            analysisManager->FinishNtuple(verboseNtupleId);
+            verboseCreated = true;
+        }
+        fVerboseStepNtupleId = verboseNtupleId;
+    } else {
+        fVerboseStepNtupleId = -1;
     }
 
     if (histosCreated) {
@@ -240,7 +284,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->SetH1YAxisTitle(histoId, "Number of events");
 
 
-        // Get maxEnergy for other histograms (use primary energy for residual energy, etc.)
+        // Get maxEnergy for other histograms (use scan max when available).
         G4double maxEnergy = fMaxPrimaryEnergy;
         if (maxEnergy <= 0.) {
             maxEnergy = fPrimaryEnergy;
@@ -328,6 +372,49 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->SetH1XAxisTitle(endVolId, "End volume category");
         analysisManager->SetH1YAxisTitle(endVolId, "Number of events");
 
+        // Primary e- exits from Al2O3 -> World classified by side:
+        // 1: entrance-side exit (backscatter-like), 2: opposite-side exit (transmission-like),
+        // 3: lateral/edge exit.
+        fPrimaryExitClassId = analysisManager->CreateH1(
+            "PrimaryExitClass",
+            "Primary e- exit class at Al_{2}O_{3}#rightarrowWorld",
+            4,
+            0.,
+            4.
+        );
+        analysisManager->SetH1XAxisTitle(fPrimaryExitClassId, "Exit class");
+        analysisManager->SetH1YAxisTitle(fPrimaryExitClassId, "Number of exits");
+
+        fPrimaryExitEnergyEntranceId = analysisManager->CreateH1(
+            "PrimaryExitEnergyEntrance",
+            "Primary e- exit kinetic energy (entrance-side exit)",
+            residualBins,
+            0.,
+            maxEnergy / eV
+        );
+        analysisManager->SetH1XAxisTitle(fPrimaryExitEnergyEntranceId, "Exit kinetic energy (eV)");
+        analysisManager->SetH1YAxisTitle(fPrimaryExitEnergyEntranceId, "Number of exits");
+
+        fPrimaryExitEnergyOppositeId = analysisManager->CreateH1(
+            "PrimaryExitEnergyOpposite",
+            "Primary e- exit kinetic energy (opposite-side exit)",
+            residualBins,
+            0.,
+            maxEnergy / eV
+        );
+        analysisManager->SetH1XAxisTitle(fPrimaryExitEnergyOppositeId, "Exit kinetic energy (eV)");
+        analysisManager->SetH1YAxisTitle(fPrimaryExitEnergyOppositeId, "Number of exits");
+
+        fPrimaryExitEnergyLateralId = analysisManager->CreateH1(
+            "PrimaryExitEnergyLateral",
+            "Primary e- exit kinetic energy (lateral/edge exit)",
+            residualBins,
+            0.,
+            maxEnergy / eV
+        );
+        analysisManager->SetH1XAxisTitle(fPrimaryExitEnergyLateralId, "Exit kinetic energy (eV)");
+        analysisManager->SetH1YAxisTitle(fPrimaryExitEnergyLateralId, "Number of exits");
+
         // Create a 1D histogram for step length in Al2O3
         // ID 6: StepLengthAl2O3
         // Use a larger range to accommodate longer steps, especially for higher energy electrons
@@ -339,21 +426,23 @@ void RunAction::BeginOfRunAction(const G4Run*)
         const G4double idealStepLenBins = std::ceil(maxStepLenNm / stepLenBinNm);
         const G4int stepLenBins = std::max(
             1, static_cast<G4int>(std::min(idealStepLenBins, static_cast<G4double>(maxStepLenBins))));
-        G4int stepLenId = analysisManager->CreateH1(
+        fStepLengthAl2O3Id = analysisManager->CreateH1(
             "StepLengthAl2O3",
             "Step length in Al_{2}O_{3}",
             stepLenBins,  // ~0.1 nm bins up to capped max
             0.,
             maxStepLenNm
         );
-        analysisManager->SetH1XAxisTitle(stepLenId, "Step length (nm)");
-        analysisManager->SetH1YAxisTitle(stepLenId, "Number of steps");
+        analysisManager->SetH1XAxisTitle(fStepLengthAl2O3Id, "Step length (nm)");
+        analysisManager->SetH1YAxisTitle(fStepLengthAl2O3Id, "Number of steps");
 
         // Create depth profiles for primary electron energy deposition (unweighted + weighted).
         // Tie binning to the enforced max step when available so smaller steps yield finer depth resolution.
         if (thicknessNm > 0.) {
             const G4double maxStepNm = (fMaxStep > 0.) ? (fMaxStep / nm) : 0.5;
-            const G4double depthBinNm = std::min(0.05, std::max(0.005, 0.5 * maxStepNm));
+            const G4double depthBinNm = (maxStepNm > 0.)
+                                            ? std::max(0.005, maxStepNm)
+                                            : 0.05;
             const G4int maxDepthBins = 4000;
             const G4double idealDepthBins = std::ceil(thicknessNm / depthBinNm);
             const G4int depthBins = std::max(
@@ -387,6 +476,29 @@ void RunAction::BeginOfRunAction(const G4Run*)
             );
             analysisManager->SetH1XAxisTitle(fEdepDepthPrimaryCountsId, "Depth from entrance (nm)");
             analysisManager->SetH1YAxisTitle(fEdepDepthPrimaryCountsId, "Energy-depositing steps");
+
+            // 2D: energy deposited per step vs depth (primary e- only)
+            const G4double maxStepEdepEv =
+                std::max(50.0, std::min(maxEnergy / eV, 50000.0));
+            const G4int maxStepBins2D = 2000;
+            const G4double idealStepBins2D = std::ceil(maxStepEdepEv);
+            const G4int stepBins2D = std::max(
+                1, static_cast<G4int>(std::min(idealStepBins2D, static_cast<G4double>(maxStepBins2D))));
+            const G4int stepDepthBins = (maxStepNm > 0.)
+                                            ? std::max(1, static_cast<G4int>(std::ceil(thicknessNm / maxStepNm)))
+                                            : depthBins;
+            fEdepStepDepthPrimaryId = analysisManager->CreateH2(
+                "EdepStepVsDepthPrimary",
+                "Primary e- energy deposition per step vs depth in Al_{2}O_{3}",
+                stepDepthBins,
+                0.,
+                thicknessNm,
+                stepBins2D,
+                0.,
+                maxStepEdepEv
+            );
+            analysisManager->SetH2XAxisTitle(fEdepStepDepthPrimaryId, "Depth from entrance (nm)");
+            analysisManager->SetH2YAxisTitle(fEdepStepDepthPrimaryId, "Energy deposition per step (eV)");
 
             fPrimaryTrackLengthDepthId = analysisManager->CreateH1(
                 "PrimaryTrackLengthDepth",
@@ -432,7 +544,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         // Create a 2D histogram: event edep vs number of steps in Al2O3
         // ID 0 for H2: EdepPrimaryVsSteps
         // Use the same binning as EdepPrimary (maxEdepRange, not maxEnergy)
-        G4int edepVsStepsId = analysisManager->CreateH2(
+        fEdepVsStepsId = analysisManager->CreateH2(
             "EdepPrimaryVsSteps",
             "Primary energy deposition vs steps in Al_{2}O_{3}",
             finalBins,  // Use same bins as EdepPrimary
@@ -442,12 +554,12 @@ void RunAction::BeginOfRunAction(const G4Run*)
             0.,
             stepsMax
         );
-        analysisManager->SetH2XAxisTitle(edepVsStepsId, "Primary energy deposition (eV)");
-        analysisManager->SetH2YAxisTitle(edepVsStepsId, "Energy-depositing steps per event");
+        analysisManager->SetH2XAxisTitle(fEdepVsStepsId, "Primary energy deposition (eV)");
+        analysisManager->SetH2YAxisTitle(fEdepVsStepsId, "Energy-depositing steps per event");
 
         // Create a 2D histogram: primary residual energy vs end volume category
         // ID 1 for H2: ResidualEnergyVsEndVolume
-        G4int resVsEndId = analysisManager->CreateH2(
+        fResidualVsEndVolumeId = analysisManager->CreateH2(
             "ResidualEnergyVsEndVolume",
             "Primary residual energy vs end volume",
             primaryBins,
@@ -457,12 +569,12 @@ void RunAction::BeginOfRunAction(const G4Run*)
             0.,
             5.
         );
-        analysisManager->SetH2XAxisTitle(resVsEndId, "Residual kinetic energy (eV)");
-        analysisManager->SetH2YAxisTitle(resVsEndId, "End volume category");
+        analysisManager->SetH2XAxisTitle(fResidualVsEndVolumeId, "Residual kinetic energy (eV)");
+        analysisManager->SetH2YAxisTitle(fResidualVsEndVolumeId, "End volume category");
 
         // Create a 2D histogram: primary residual energy vs last process category
         // ID 2 for H2: ResidualEnergyVsLastProcess
-        G4int resVsProcId = analysisManager->CreateH2(
+        fResidualVsLastProcessId = analysisManager->CreateH2(
             "ResidualEnergyVsLastProcess",
             "Primary residual energy vs last process",
             primaryBins,
@@ -472,12 +584,12 @@ void RunAction::BeginOfRunAction(const G4Run*)
             0.,
             7.
         );
-        analysisManager->SetH2XAxisTitle(resVsProcId, "Residual kinetic energy (eV)");
-        analysisManager->SetH2YAxisTitle(resVsProcId, "Last process category");
+        analysisManager->SetH2XAxisTitle(fResidualVsLastProcessId, "Residual kinetic energy (eV)");
+        analysisManager->SetH2YAxisTitle(fResidualVsLastProcessId, "Last process category");
 
         // Create a 2D histogram: primary residual energy vs stop status category
         // ID 3 for H2: ResidualEnergyVsStopStatus
-        G4int resVsStopId = analysisManager->CreateH2(
+        fResidualVsStopStatusId = analysisManager->CreateH2(
             "ResidualEnergyVsStopStatus",
             "Primary residual energy vs stop status",
             primaryBins,
@@ -487,8 +599,8 @@ void RunAction::BeginOfRunAction(const G4Run*)
             0.,
             7.
         );
-        analysisManager->SetH2XAxisTitle(resVsStopId, "Residual kinetic energy (eV)");
-        analysisManager->SetH2YAxisTitle(resVsStopId, "Stop status category");
+        analysisManager->SetH2XAxisTitle(fResidualVsStopStatusId, "Residual kinetic energy (eV)");
+        analysisManager->SetH2YAxisTitle(fResidualVsStopStatusId, "Stop status category");
 
         histosCreated = true;
     }
@@ -732,6 +844,11 @@ G4int RunAction::GetEdepDepthPrimaryCountsId() const
     return fEdepDepthPrimaryCountsId;
 }
 
+G4int RunAction::GetEdepStepDepthPrimaryId() const
+{
+    return fEdepStepDepthPrimaryId;
+}
+
 G4int RunAction::GetPrimaryTrackLengthDepthId() const
 {
     return fPrimaryTrackLengthDepthId;
@@ -740,6 +857,56 @@ G4int RunAction::GetPrimaryTrackLengthDepthId() const
 G4int RunAction::GetPrimaryTrackLengthId() const
 {
     return fPrimaryTrackLengthId;
+}
+
+G4int RunAction::GetPrimaryExitClassId() const
+{
+    return fPrimaryExitClassId;
+}
+
+G4int RunAction::GetPrimaryExitEnergyEntranceId() const
+{
+    return fPrimaryExitEnergyEntranceId;
+}
+
+G4int RunAction::GetPrimaryExitEnergyOppositeId() const
+{
+    return fPrimaryExitEnergyOppositeId;
+}
+
+G4int RunAction::GetPrimaryExitEnergyLateralId() const
+{
+    return fPrimaryExitEnergyLateralId;
+}
+
+G4int RunAction::GetStepLengthAl2O3Id() const
+{
+    return fStepLengthAl2O3Id;
+}
+
+G4int RunAction::GetEdepVsStepsId() const
+{
+    return fEdepVsStepsId;
+}
+
+G4int RunAction::GetResidualVsEndVolumeId() const
+{
+    return fResidualVsEndVolumeId;
+}
+
+G4int RunAction::GetResidualVsLastProcessId() const
+{
+    return fResidualVsLastProcessId;
+}
+
+G4int RunAction::GetResidualVsStopStatusId() const
+{
+    return fResidualVsStopStatusId;
+}
+
+G4int RunAction::GetVerboseStepNtupleId() const
+{
+    return fVerboseStepNtupleId;
 }
 
 void RunAction::SetOutputTag(const G4String& tag)
@@ -760,6 +927,51 @@ void RunAction::SetLivermoreAtomicDeexcitation(G4int value)
 G4bool RunAction::IsPaiEnabled() const
 {
     return fPaiEnabled;
+}
+
+G4bool RunAction::IsVerboseStepDiagnostics() const
+{
+    return fVerboseStepDiagnostics;
+}
+
+G4double RunAction::GetVerboseStepThresholdFrac() const
+{
+    return fVerboseStepThresholdFrac;
+}
+
+G4int RunAction::GetVerboseStepMaxCount() const
+{
+    return fVerboseStepMaxCount;
+}
+
+void RunAction::SetVerboseStepDiagnostics(G4bool enabled)
+{
+    fVerboseStepDiagnostics = enabled;
+}
+
+void RunAction::SetVerboseStepThresholdFrac(G4double frac)
+{
+    if (frac > 0.0 && frac <= 1.0) {
+        fVerboseStepThresholdFrac = frac;
+    }
+}
+
+void RunAction::SetVerboseStepMaxCount(G4int maxCount)
+{
+    if (maxCount > 0) {
+        fVerboseStepMaxCount = maxCount;
+    }
+}
+
+G4int RunAction::ConsumeVerboseStepSlot()
+{
+    if (!fVerboseStepDiagnostics) {
+        return -1;
+    }
+    if (fVerboseStepUsed >= fVerboseStepMaxCount) {
+        return -1;
+    }
+    return fVerboseStepUsed++;
 }
 
 void RunAction::OptimizeHistogramInFile(const G4String& fileName)
@@ -842,5 +1054,52 @@ void RunAction::OptimizeHistogramInFile(const G4String& fileName)
         file->Flush();
     }
     
+    // Ensure EdepStepVsDepthPrimary Y-axis is limited to the primary energy for this run.
+    TH2* hStepDepth = dynamic_cast<TH2*>(file->Get("EdepStepVsDepthPrimary"));
+    if (hStepDepth) {
+        const double maxEnergyEv = (fPrimaryEnergy > 0.)
+                                       ? (fPrimaryEnergy / eV)
+                                       : ((fMaxPrimaryEnergy > 0.) ? (fMaxPrimaryEnergy / eV) : 0.0);
+        if (maxEnergyEv > 0.) {
+            hStepDepth->GetYaxis()->SetRangeUser(0.0, maxEnergyEv);
+            hStepDepth->Write("EdepStepVsDepthPrimary", TObject::kOverwrite);
+            file->Flush();
+        }
+        if (fNPrimaryElectrons > 0) {
+            auto* hStepDepthPerEvent =
+                dynamic_cast<TH2*>(hStepDepth->Clone("EdepStepVsDepthPrimaryPerEvent"));
+            if (hStepDepthPerEvent) {
+                hStepDepthPerEvent->Scale(1.0 / static_cast<double>(fNPrimaryElectrons));
+                hStepDepthPerEvent->Write("EdepStepVsDepthPrimaryPerEvent", TObject::kOverwrite);
+                file->Flush();
+            }
+        }
+    }
+
+    if (fNPrimaryElectrons > 0) {
+        const double norm = 1.0 / static_cast<double>(fNPrimaryElectrons);
+        const char* histNames[] = {
+            "EdepDepthPrimary",
+            "EdepDepthPrimaryWeighted",
+            "EdepDepthPrimaryCounts"
+        };
+        for (int i = 0; i < 3; ++i) {
+            TH1* h = dynamic_cast<TH1*>(file->Get(histNames[i]));
+            if (!h) {
+                continue;
+            }
+            auto* hPerEvent = dynamic_cast<TH1*>(h->Clone(histNames[i]));
+            if (!hPerEvent) {
+                continue;
+            }
+            hPerEvent->Scale(norm);
+            hPerEvent->Write(histNames[i], TObject::kOverwrite);
+            file->Flush();
+        }
+        file->Delete("EdepDepthPrimaryPerEvent;*");
+        file->Delete("EdepDepthPrimaryWeightedPerEvent;*");
+        file->Delete("EdepDepthPrimaryCountsPerEvent;*");
+    }
+
     file->Close();
 }
