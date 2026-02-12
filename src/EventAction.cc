@@ -20,7 +20,19 @@ EventAction::EventAction(RunAction* runAction)
       fPrimaryStopStatus(-1),
       fHasPrimaryExitCandidate(false),
       fPrimaryExitClassCandidate(0),
-      fPrimaryExitEnergyCandidate(0.)
+      fPrimaryExitEnergyCandidate(0.),
+      fPrimaryEdepByEIoni(0.),
+      fPrimaryEdepByMsc(0.),
+      fPrimaryEdepByOther(0.),
+      fPrimaryFirstStepEdep(0.),
+      fPrimaryMaxStepEdep(0.),
+      fDepthFirstEdepNm(-1.),
+      fPrimaryMaxDepthNm(0.),
+      fPrimaryBoundaryCrossings(0),
+      fPrimaryDirectionReversals(0),
+      fLastPrimaryDirectionSign(0),
+      fHasLastPrimaryDirectionSign(false),
+      fPrimaryFirstProcessInAl2O3("")
 {
 }
 
@@ -43,6 +55,18 @@ void EventAction::BeginOfEventAction(const G4Event*)
     fHasPrimaryExitCandidate = false;
     fPrimaryExitClassCandidate = 0;
     fPrimaryExitEnergyCandidate = 0.;
+    fPrimaryEdepByEIoni = 0.;
+    fPrimaryEdepByMsc = 0.;
+    fPrimaryEdepByOther = 0.;
+    fPrimaryFirstStepEdep = 0.;
+    fPrimaryMaxStepEdep = 0.;
+    fDepthFirstEdepNm = -1.;
+    fPrimaryMaxDepthNm = 0.;
+    fPrimaryBoundaryCrossings = 0;
+    fPrimaryDirectionReversals = 0;
+    fLastPrimaryDirectionSign = 0;
+    fHasLastPrimaryDirectionSign = false;
+    fPrimaryFirstProcessInAl2O3 = "";
 }
 
 void EventAction::EndOfEventAction(const G4Event* event)
@@ -84,7 +108,9 @@ void EventAction::EndOfEventAction(const G4Event* event)
     // Fill exactly one primary-exit classification per event (if any exit occurred).
     // Accept exits only when the final location is outside Al2O3.
     const G4int finalLocation = (fPrimaryEndLocation != 0) ? fPrimaryEndLocation : fPrimaryLastLocation;
+    G4int eventExitClass = 4; // 1=entrance, 2=opposite, 3=lateral, 4=stop/no-valid-exit
     if (fRunAction && fHasPrimaryExitCandidate && finalLocation != 1) {
+        eventExitClass = fPrimaryExitClassCandidate;
         const G4int classId = fRunAction->GetPrimaryExitClassId();
         if (classId >= 0) {
             analysisManager->FillH1(classId, static_cast<G4double>(fPrimaryExitClassCandidate));
@@ -100,6 +126,23 @@ void EventAction::EndOfEventAction(const G4Event* event)
                 const G4int id = fRunAction->GetPrimaryExitEnergyLateralId();
                 if (id >= 0) analysisManager->FillH1(id, fPrimaryExitEnergyCandidate / eV);
             }
+        }
+    }
+
+    // Fill class-conditioned EdepPrimary histograms.
+    if (fRunAction) {
+        G4int classEdepId = -1;
+        if (eventExitClass == 1) {
+            classEdepId = fRunAction->GetEdepPrimaryExitEntranceId();
+        } else if (eventExitClass == 2) {
+            classEdepId = fRunAction->GetEdepPrimaryExitOppositeId();
+        } else if (eventExitClass == 3) {
+            classEdepId = fRunAction->GetEdepPrimaryExitLateralId();
+        } else {
+            classEdepId = fRunAction->GetEdepPrimaryStopId();
+        }
+        if (classEdepId >= 0) {
+            analysisManager->FillH1(classEdepId, fEdepPrimary / eV);
         }
     }
 
@@ -148,6 +191,34 @@ void EventAction::EndOfEventAction(const G4Event* event)
             fPrimaryResidualEnergy / eV,
             static_cast<G4double>(stopStatusCategory(fPrimaryStopStatus))
         );
+    }
+
+    // One-row-per-event diagnostics ntuple for primary electron transport debugging.
+    if (fRunAction && fRunAction->GetEventDiagnosticsNtupleId() >= 0) {
+        const G4int ntupleId = fRunAction->GetEventDiagnosticsNtupleId();
+        analysisManager->FillNtupleIColumn(ntupleId, 0, event ? event->GetEventID() : -1);
+        analysisManager->FillNtupleDColumn(ntupleId, 1, fRunAction->GetPrimaryEnergy() / eV);
+        analysisManager->FillNtupleDColumn(ntupleId, 2, fEdepPrimary / eV);
+        analysisManager->FillNtupleDColumn(ntupleId, 3, fPrimaryResidualEnergy / eV);
+        analysisManager->FillNtupleIColumn(ntupleId, 4, eventExitClass);
+        analysisManager->FillNtupleDColumn(ntupleId, 5, fPrimaryExitEnergyCandidate / eV);
+        analysisManager->FillNtupleIColumn(ntupleId, 6, fPrimaryStopStatus);
+        analysisManager->FillNtupleIColumn(ntupleId, 7, finalLocation);
+        analysisManager->FillNtupleIColumn(ntupleId, 8, fNMicroscopicEdep);
+        analysisManager->FillNtupleDColumn(ntupleId, 9, fPrimaryTrackLength / nm);
+        analysisManager->FillNtupleDColumn(ntupleId, 10, fPrimaryMaxDepthNm);
+        analysisManager->FillNtupleIColumn(ntupleId, 11, fPrimaryBoundaryCrossings);
+        analysisManager->FillNtupleIColumn(ntupleId, 12, fPrimaryDirectionReversals);
+        analysisManager->FillNtupleSColumn(ntupleId, 13, fPrimaryFirstProcessInAl2O3);
+        analysisManager->FillNtupleSColumn(ntupleId, 14, fPrimaryLastProcess);
+        analysisManager->FillNtupleDColumn(ntupleId, 15, fPrimaryEdepByEIoni / eV);
+        analysisManager->FillNtupleDColumn(ntupleId, 16, fPrimaryEdepByMsc / eV);
+        analysisManager->FillNtupleDColumn(ntupleId, 17, fPrimaryEdepByOther / eV);
+        analysisManager->FillNtupleDColumn(ntupleId, 18, fPrimaryFirstStepEdep / eV);
+        analysisManager->FillNtupleDColumn(ntupleId, 19, fPrimaryMaxStepEdep / eV);
+        analysisManager->FillNtupleDColumn(ntupleId, 20,
+                                           (fDepthFirstEdepNm >= 0.) ? fDepthFirstEdepNm : -1.0);
+        analysisManager->AddNtupleRow(ntupleId);
     }
 
     if (fRunAction && fEdepPrimary > 0.) {
@@ -231,4 +302,63 @@ void EventAction::UpdatePrimaryExitCandidate(G4int exitClass, G4double kineticEn
     fHasPrimaryExitCandidate = true;
     fPrimaryExitClassCandidate = exitClass;
     fPrimaryExitEnergyCandidate = (kineticEnergy > 0.) ? kineticEnergy : 0.;
+}
+
+void EventAction::AddPrimaryEdepByProcess(const G4String& processName, G4double edep, G4double depthNm)
+{
+    if (edep <= 0.) {
+        return;
+    }
+    if (fPrimaryFirstStepEdep <= 0.) {
+        fPrimaryFirstStepEdep = edep;
+        fDepthFirstEdepNm = depthNm;
+    }
+    if (edep > fPrimaryMaxStepEdep) {
+        fPrimaryMaxStepEdep = edep;
+    }
+    if (processName == "eIoni") {
+        fPrimaryEdepByEIoni += edep;
+    } else if (processName == "msc") {
+        fPrimaryEdepByMsc += edep;
+    } else {
+        fPrimaryEdepByOther += edep;
+    }
+}
+
+void EventAction::UpdatePrimaryMaxDepthNm(G4double depthNm)
+{
+    if (depthNm > fPrimaryMaxDepthNm) {
+        fPrimaryMaxDepthNm = depthNm;
+    }
+}
+
+void EventAction::AddPrimaryBoundaryCrossing()
+{
+    ++fPrimaryBoundaryCrossings;
+}
+
+void EventAction::UpdatePrimaryDirectionSignZ(G4double dirZ)
+{
+    const G4double threshold = 1e-9;
+    G4int sign = 0;
+    if (dirZ > threshold) {
+        sign = 1;
+    } else if (dirZ < -threshold) {
+        sign = -1;
+    }
+    if (sign == 0) {
+        return;
+    }
+    if (fHasLastPrimaryDirectionSign && fLastPrimaryDirectionSign != sign) {
+        ++fPrimaryDirectionReversals;
+    }
+    fLastPrimaryDirectionSign = sign;
+    fHasLastPrimaryDirectionSign = true;
+}
+
+void EventAction::UpdatePrimaryFirstProcessInAl2O3(const G4String& processName)
+{
+    if (fPrimaryFirstProcessInAl2O3.empty() && !processName.empty() && processName != "None") {
+        fPrimaryFirstProcessInAl2O3 = processName;
+    }
 }

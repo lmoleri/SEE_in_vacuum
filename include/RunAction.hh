@@ -60,6 +60,12 @@ public:
     G4int GetResidualVsEndVolumeId() const;
     G4int GetResidualVsLastProcessId() const;
     G4int GetResidualVsStopStatusId() const;
+    G4int GetEdepPrimaryStopId() const;
+    G4int GetEdepPrimaryExitEntranceId() const;
+    G4int GetEdepPrimaryExitOppositeId() const;
+    G4int GetEdepPrimaryExitLateralId() const;
+    G4int GetEventDiagnosticsNtupleId() const;
+    G4double GetPrimaryEnergy() const;
     G4int GetVerboseStepNtupleId() const;
     G4bool IsVerboseStepDiagnostics() const;
     G4double GetVerboseStepThresholdFrac() const;
@@ -101,6 +107,11 @@ private:
     G4int fResidualVsEndVolumeId;
     G4int fResidualVsLastProcessId;
     G4int fResidualVsStopStatusId;
+    G4int fEdepPrimaryStopId;
+    G4int fEdepPrimaryExitEntranceId;
+    G4int fEdepPrimaryExitOppositeId;
+    G4int fEdepPrimaryExitLateralId;
+    G4int fEventDiagnosticsNtupleId;
     G4int fVerboseStepNtupleId;
     G4String fOutputTag;
     G4bool fPaiEnabled;

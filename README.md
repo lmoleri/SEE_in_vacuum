@@ -132,19 +132,51 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
 
 - `SEE_in_vacuum.root` (ROOT file with histograms and canvases)
   - `EdepPrimary`: total energy deposition in Al2O3 (eV) from the primary particle and all its descendants (secondaries, delta rays, etc.). This represents the total energy that originated from the primary particle. The histogram is created with fine binning (1 eV per bin) and a reasonable range (0-10000 eV), then automatically optimized after the simulation to trim the range after the last non-empty bin, ensuring proper x-axis range and binning that matches the data distribution.
+  - `EdepPrimaryWeighted`: depth-weighted total primary energy deposition per event (eV), using `exp(-alpha z)` when `sey_alpha_inv_nm` is set
   - `EdepInteractions`: number of energy-depositing steps in Al2O3 per event
   - `EdepStep`: energy deposition per step in Al2O3 (eV) from any particle (primary or secondary)
+  - `EdepDepthPrimary`: depth profile of primary-electron energy deposition in Al2O3, normalized per event (mean eV/event vs depth)
+  - `EdepDepthPrimaryWeighted`: depth profile of weighted primary-electron energy deposition, normalized per event
+  - `EdepDepthPrimaryCounts`: depth profile of primary energy-depositing step counts, normalized per event (mean steps/event vs depth)
+  - `EdepStepVsDepthPrimary`: 2D primary-electron per-step energy deposition vs depth (entries = steps)
+  - `EdepStepVsDepthPrimaryPerEvent`: same 2D histogram normalized by number of primaries (z-axis = steps/event)
+  - `PrimaryTrackLengthDepth`: primary-electron track-length accumulation vs depth (nm per event)
+  - `PrimaryTrackLengthAl2O3`: total primary-electron track length per event (nm)
   - `PAITransfer`: per-step energy transfer proxy in Al2O3 (eV)
   - `PrimaryResidualEnergy`: primary residual kinetic energy at end of event (eV)
   - `PrimaryEndVolume`: end volume category (Al2O3/World/OutOfWorld/Other)
+  - `PrimaryExitClass`: event-level class for primaries exiting Al2O3 to World
+  - `PrimaryExitEnergyEntrance`: primary exit kinetic energy for entrance-side exits (class 1)
+  - `PrimaryExitEnergyOpposite`: primary exit kinetic energy for opposite-side exits (class 2)
+  - `PrimaryExitEnergyLateral`: primary exit kinetic energy for lateral/edge exits (class 3)
+  - `EdepPrimaryStop`: `EdepPrimary` for stop/no-valid-exit events
+  - `EdepPrimaryExitEntrance`: `EdepPrimary` for entrance-side exit events
+  - `EdepPrimaryExitOpposite`: `EdepPrimary` for opposite-side exit events
+  - `EdepPrimaryExitLateral`: `EdepPrimary` for lateral-exit events
   - `StepLengthAl2O3`: step length distribution in Al2O3 (nm)
   - `ResidualEnergyVsEndVolume`: 2D residual energy vs end volume category
   - `ResidualEnergyVsLastProcess`: 2D residual energy vs last process category
   - `ResidualEnergyVsStopStatus`: 2D residual energy vs stop status category
   - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`,
   `substrateThicknessNm`, `sampleRadiusNm`, `maxPrimaryEnergyMeV`, `paiEnabled`,
-  `primaryParticle`, `emModel`, and `livermoreAtomicDeexcitation`
+  `primaryParticle`, `emModel`, `livermoreAtomicDeexcitation`, `primaryElectrons`,
+  `secondaryElectrons`, `emittedElectrons`, `sey`, `minNonZeroPrimaryEdepEv`, and `maxStepNm`
+  - `EventDiagnostics`: one row per event (primary-electron diagnostics): `EdepPrimary`,
+  residual energy, exit class/energy, stop status, end volume, number of edep steps,
+  track length, max depth, boundary crossings, z-direction reversals, first/last process,
+  process-resolved edep budget (`eIoni`, `msc`, `other`), first-step edep/depth, max-step edep
   - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`, and other canvases saved with annotations
+
+For `PrimaryExitClass`, class codes are:
+- `1`: entrance-side exit (backscatter-like)
+- `2`: opposite-side exit (transmission-like)
+- `3`: lateral/edge exit
+
+For `EventDiagnostics.primaryExitClass`, class codes are:
+- `1`: entrance-side exit
+- `2`: opposite-side exit
+- `3`: lateral/edge exit
+- `4`: stop/no valid exit
 
 ## Plotting
 
@@ -352,3 +384,4 @@ Create a `run.mac` file to run simulations:
 - **`doc/MUON_SEY_USAGE.md`**: Usage guide for the Monte Carlo SEY calculation script with examples and troubleshooting
 - **`doc/PLOT_LEGEND_EXPLANATION.md`**: Explanation of P_esc and Expected values on the SEY plot
 - **`doc/SEY_DIONNE_VALIDATION.md`**: Validation of electron SEY vs the Dionne analytic model (Fig. 9). Plots live under `plots/MC_electrons_on_shell_dionne-model/`.
+- **`doc/STEP_CONVERGENCE_PROTOCOL.md`**: Objective procedure to choose `max_step_nm` (step-size convergence, acceptance criteria, and benchmark requirements).

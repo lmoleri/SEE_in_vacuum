@@ -30,6 +30,11 @@ public:
     void UpdatePrimaryLastProcess(const G4String& processName);
     void UpdatePrimaryStopStatus(G4int status);
     void UpdatePrimaryExitCandidate(G4int exitClass, G4double kineticEnergy);
+    void AddPrimaryEdepByProcess(const G4String& processName, G4double edep, G4double depthNm);
+    void UpdatePrimaryMaxDepthNm(G4double depthNm);
+    void AddPrimaryBoundaryCrossing();
+    void UpdatePrimaryDirectionSignZ(G4double dirZ);
+    void UpdatePrimaryFirstProcessInAl2O3(const G4String& processName);
 
 private:
     RunAction* fRunAction;
@@ -45,6 +50,18 @@ private:
     G4bool fHasPrimaryExitCandidate;
     G4int fPrimaryExitClassCandidate;
     G4double fPrimaryExitEnergyCandidate;
+    G4double fPrimaryEdepByEIoni;
+    G4double fPrimaryEdepByMsc;
+    G4double fPrimaryEdepByOther;
+    G4double fPrimaryFirstStepEdep;
+    G4double fPrimaryMaxStepEdep;
+    G4double fDepthFirstEdepNm;
+    G4double fPrimaryMaxDepthNm;
+    G4int fPrimaryBoundaryCrossings;
+    G4int fPrimaryDirectionReversals;
+    G4int fLastPrimaryDirectionSign;
+    G4bool fHasLastPrimaryDirectionSign;
+    G4String fPrimaryFirstProcessInAl2O3;
 };
 
 #endif

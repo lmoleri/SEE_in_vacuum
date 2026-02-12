@@ -254,6 +254,28 @@ for 5 nm Al2O3 with no substrate and inspect several diagnostics.
 - `dedx_vs_energy_baseline_penelope.pdf`
 - `dedx_vs_energy_baseline_livermore.pdf`
 
+### Overlay comparison plots from scan ROOT files
+
+Use `scripts/plot_edep_depth_overlays.py` to overlay distributions across all primary energies
+in a scan directory:
+
+```bash
+conda run -n geant4 python scripts/plot_edep_depth_overlays.py \
+  --results-dir results/scan_edep_depth_5nm_sub0nm_r100nm_particlee-_energy100-1000eV_penelope_step0p1nm_events10000_exitdiag_evtlevel_v2 \
+  --label scan_edep_depth_5nm_sub0nm_r100nm_particlee-_energy100-1000eV_penelope_step0p1nm_events10000_exitdiag_evtlevel_v2 \
+  --save-results
+```
+
+Produced overlays include:
+- `EdepDepthPrimary`
+- `EdepDepthPrimaryWeighted`
+- `EdepDepthPrimaryCounts`
+- `EdepPrimary`
+
+The script writes:
+- A ROOT file with all overlay canvases under `--output-dir` (`overlays_<label>.root`)
+- If `--save-results` is used, another ROOT file with the same canvases in `<results-dir>/plots/`
+
 ### Notes on depth vs track-length diagnostics
 
 `EdepDepthPrimary` is **energy deposition vs depth** (energy-weighted).
@@ -263,20 +285,51 @@ electrons deposit energy quickly.
 `PrimaryTrackLengthDepth` is **track length vs depth** (path-length weighted),
 and is the correct diagnostic for “where the primary actually travels” inside
 the film.
-gamma cut: 1 mm -> ~7.1 keV
-e- cut:    1 mm -> ~826 keV
-e+ cut:    1 mm -> ~791 keV
-proton:    1 mm -> 100 keV
+
+`EdepDepthPrimaryWeighted` applies `exp(-alpha z)` step-by-step before summing in depth bins.
+`EdepDepthPrimaryCounts` stores the number of primary energy-depositing steps vs depth.
+
+The 2D histogram `EdepStepVsDepthPrimary` stores per-step `(depth, edep_step)`.
+`EdepStepVsDepthPrimaryPerEvent` is the same histogram normalized by the number of primary events.
+
+## Event-level primary-exit diagnostics (5 nm Al2O3)
+
+To diagnose the `EdepPrimary` shape transition around 500 eV, use:
+
+```bash
+conda run -n geant4 ./build/SEE_in_vacuum config/geant4/scan_edep_depth_5nm_step0p1_penelope_exitdiag_evtlevel_v2.json
 ```
 
-Global EM step settings (shown by Geant4):
+This creates one ROOT file per energy in:
 
-```
-Step function for e+-: (0.2, 0.01 mm)
-MscRangeFactor (e-/e+): 0.08
-MscLambdaLimit: 1 mm
-```
+`results/scan_edep_depth_5nm_sub0nm_r100nm_particlee-_energy100-1000eV_penelope_step0p1nm_events10000_exitdiag_evtlevel_v2`
 
-Implication: these defaults are **orders of magnitude larger than the 5 nm layer thickness** and can
-push the effective energy-deposition peak to higher energies. To study the ~300 eV peak region, we
-will need to tighten production cuts and step limits specifically for the Al2O3 region.
+New event-level histograms:
+- `PrimaryExitClass`: one entry per primary event that exits `Al2O3 -> World`
+- `PrimaryExitEnergyEntrance`: exit kinetic energy for class 1 events
+- `PrimaryExitEnergyOpposite`: exit kinetic energy for class 2 events
+- `PrimaryExitEnergyLateral`: exit kinetic energy for class 3 events
+- `EdepPrimaryStop`: `EdepPrimary` for stop/no-valid-exit events
+- `EdepPrimaryExitEntrance`: `EdepPrimary` for class 1 events
+- `EdepPrimaryExitOpposite`: `EdepPrimary` for class 2 events
+- `EdepPrimaryExitLateral`: `EdepPrimary` for class 3 events
+
+New event-level ntuple:
+- `EventDiagnostics` (one row per event) with:
+  - core observables: `primaryEnergyEv`, `edepPrimaryEv`, `primaryResidualEv`
+  - topology labels: `primaryExitClass`, `primaryExitEnergyEv`, `primaryStopStatus`, `primaryEndLocation`
+  - transport scalars: `nEdepSteps`, `primaryTrackLengthNm`, `maxDepthNm`,
+    `nBoundaryCrossings`, `nDirectionReversalsZ`
+  - process labels: `firstProcessInAl2O3`, `lastProcess`
+  - process-resolved energy budget: `edepByEIoniEv`, `edepByMscEv`, `edepByOtherEv`
+  - first/strongest step diagnostics: `edepFirstStepEv`, `depthFirstEdepNm`, `edepMaxStepEv`
+
+Class definition:
+- `1`: entrance-side exit (backscatter-like)
+- `2`: opposite-side exit (transmission-like)
+- `3`: lateral/edge exit
+- `4`: stop/no valid exit (`EventDiagnostics.primaryExitClass` only; no entry in `PrimaryExitClass`)
+
+This split is useful to interpret `EdepPrimary` at higher energies:
+- Stopping events contribute near-full deposition (`EdepPrimary ~ E0`)
+- Opposite-side exits contribute a lower-deposition component (`EdepPrimary = E0 - E_exit`)

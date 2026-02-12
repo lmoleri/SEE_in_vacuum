@@ -121,6 +121,11 @@ RunAction::RunAction()
       fResidualVsEndVolumeId(-1),
       fResidualVsLastProcessId(-1),
       fResidualVsStopStatusId(-1),
+      fEdepPrimaryStopId(-1),
+      fEdepPrimaryExitEntranceId(-1),
+      fEdepPrimaryExitOppositeId(-1),
+      fEdepPrimaryExitLateralId(-1),
+      fEventDiagnosticsNtupleId(-1),
       fVerboseStepNtupleId(-1)
 {
 }
@@ -177,6 +182,8 @@ void RunAction::BeginOfRunAction(const G4Run*)
     }
 
     static G4bool metaCreated = false;
+    static G4bool eventDiagCreated = false;
+    static G4int eventDiagNtupleId = -1;
     static G4bool histosCreated = false;
     static G4bool verboseCreated = false;
     static G4int verboseNtupleId = -1;
@@ -201,6 +208,36 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->FinishNtuple();
         metaCreated = true;
     }
+
+    if (!eventDiagCreated) {
+        eventDiagNtupleId = analysisManager->CreateNtuple(
+            "EventDiagnostics",
+            "Primary electron event-level diagnostics in Al2O3");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "eventId");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "primaryEnergyEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "edepPrimaryEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "primaryResidualEv");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "primaryExitClass");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "primaryExitEnergyEv");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "primaryStopStatus");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "primaryEndLocation");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nEdepSteps");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "primaryTrackLengthNm");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "maxDepthNm");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nBoundaryCrossings");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nDirectionReversalsZ");
+        analysisManager->CreateNtupleSColumn(eventDiagNtupleId, "firstProcessInAl2O3");
+        analysisManager->CreateNtupleSColumn(eventDiagNtupleId, "lastProcess");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "edepByEIoniEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "edepByMscEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "edepByOtherEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "edepFirstStepEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "edepMaxStepEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "depthFirstEdepNm");
+        analysisManager->FinishNtuple(eventDiagNtupleId);
+        eventDiagCreated = true;
+    }
+    fEventDiagnosticsNtupleId = eventDiagNtupleId;
 
     if (fVerboseStepDiagnostics) {
         if (!verboseCreated) {
@@ -602,6 +639,47 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->SetH2XAxisTitle(fResidualVsStopStatusId, "Residual kinetic energy (eV)");
         analysisManager->SetH2YAxisTitle(fResidualVsStopStatusId, "Stop status category");
 
+        // Class-conditioned primary edep spectra for event topology diagnostics.
+        fEdepPrimaryStopId = analysisManager->CreateH1(
+            "EdepPrimaryStop",
+            "Primary edep in Al_{2}O_{3} (stop/no-exit events)",
+            finalBins,
+            0.,
+            maxEdepRange / eV
+        );
+        analysisManager->SetH1XAxisTitle(fEdepPrimaryStopId, "Primary energy deposition (eV)");
+        analysisManager->SetH1YAxisTitle(fEdepPrimaryStopId, "Number of events");
+
+        fEdepPrimaryExitEntranceId = analysisManager->CreateH1(
+            "EdepPrimaryExitEntrance",
+            "Primary edep in Al_{2}O_{3} (entrance-side exit events)",
+            finalBins,
+            0.,
+            maxEdepRange / eV
+        );
+        analysisManager->SetH1XAxisTitle(fEdepPrimaryExitEntranceId, "Primary energy deposition (eV)");
+        analysisManager->SetH1YAxisTitle(fEdepPrimaryExitEntranceId, "Number of events");
+
+        fEdepPrimaryExitOppositeId = analysisManager->CreateH1(
+            "EdepPrimaryExitOpposite",
+            "Primary edep in Al_{2}O_{3} (opposite-side exit events)",
+            finalBins,
+            0.,
+            maxEdepRange / eV
+        );
+        analysisManager->SetH1XAxisTitle(fEdepPrimaryExitOppositeId, "Primary energy deposition (eV)");
+        analysisManager->SetH1YAxisTitle(fEdepPrimaryExitOppositeId, "Number of events");
+
+        fEdepPrimaryExitLateralId = analysisManager->CreateH1(
+            "EdepPrimaryExitLateral",
+            "Primary edep in Al_{2}O_{3} (lateral-exit events)",
+            finalBins,
+            0.,
+            maxEdepRange / eV
+        );
+        analysisManager->SetH1XAxisTitle(fEdepPrimaryExitLateralId, "Primary energy deposition (eV)");
+        analysisManager->SetH1YAxisTitle(fEdepPrimaryExitLateralId, "Number of events");
+
         histosCreated = true;
     }
 
@@ -902,6 +980,36 @@ G4int RunAction::GetResidualVsLastProcessId() const
 G4int RunAction::GetResidualVsStopStatusId() const
 {
     return fResidualVsStopStatusId;
+}
+
+G4int RunAction::GetEdepPrimaryStopId() const
+{
+    return fEdepPrimaryStopId;
+}
+
+G4int RunAction::GetEdepPrimaryExitEntranceId() const
+{
+    return fEdepPrimaryExitEntranceId;
+}
+
+G4int RunAction::GetEdepPrimaryExitOppositeId() const
+{
+    return fEdepPrimaryExitOppositeId;
+}
+
+G4int RunAction::GetEdepPrimaryExitLateralId() const
+{
+    return fEdepPrimaryExitLateralId;
+}
+
+G4int RunAction::GetEventDiagnosticsNtupleId() const
+{
+    return fEventDiagnosticsNtupleId;
+}
+
+G4double RunAction::GetPrimaryEnergy() const
+{
+    return fPrimaryEnergy;
 }
 
 G4int RunAction::GetVerboseStepNtupleId() const

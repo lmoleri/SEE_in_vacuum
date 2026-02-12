@@ -71,6 +71,21 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     const auto*    particle = track->GetParticleDefinition();
     const G4String particleName = particle->GetParticleName();
     const G4bool isPrimary = (track->GetTrackID() == 1 && track->GetParentID() == 0);
+    const auto* process = postPoint->GetProcessDefinedStep();
+
+    const auto computeDepthNm = [&](G4double zCoord) -> G4double {
+        const G4double thickness = fRunAction->GetSampleThickness();
+        if (thickness <= 0.) {
+            return 0.0;
+        }
+        const G4double zmin = -0.5 * thickness;
+        const G4double zmax = 0.5 * thickness;
+        const G4double dirZ = fRunAction->GetPrimaryDirectionZ();
+        G4double depth = (dirZ >= 0.) ? (zCoord - zmin) : (zmax - zCoord);
+        if (depth < 0.) depth = 0.;
+        if (depth > thickness) depth = thickness;
+        return depth / nm;
+    };
 
     // Accumulate primary particle energy deposition in Al2O3 (for all primary particles)
     // (trackID==1, parentID==0, pre-step in Al2O3)
@@ -83,6 +98,26 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         if (stepLen > 0.) {
             fEventAction->AddPrimaryTrackLength(stepLen);
         }
+        if (particleName == "e-") {
+            const G4double depthNm = computeDepthNm(prePoint->GetPosition().z());
+            fEventAction->UpdatePrimaryMaxDepthNm(depthNm);
+            fEventAction->UpdatePrimaryMaxDepthNm(computeDepthNm(postPoint->GetPosition().z()));
+            fEventAction->UpdatePrimaryDirectionSignZ(track->GetMomentumDirection().z());
+            fEventAction->UpdatePrimaryFirstProcessInAl2O3(
+                process ? process->GetProcessName() : "None");
+            if (edep > 0.) {
+                fEventAction->AddPrimaryEdepByProcess(
+                    process ? process->GetProcessName() : "None", edep, depthNm);
+            }
+        }
+    }
+
+    if (fEventAction && isPrimary && particleName == "e-") {
+        const G4bool preInAl2O3 = (preName == "Al2O3");
+        const G4bool postInAl2O3 = (postName == "Al2O3");
+        if (preInAl2O3 != postInAl2O3) {
+            fEventAction->AddPrimaryBoundaryCrossing();
+        }
     }
 
     // Track primary particle residual energy and other metrics (for all primary particles)
@@ -94,9 +129,8 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         } else {
             fEventAction->UpdatePrimaryLastVolume("OutOfWorld");
         }
-        const auto* proc = postPoint->GetProcessDefinedStep();
-        if (proc) {
-            fEventAction->UpdatePrimaryLastProcess(proc->GetProcessName());
+        if (process) {
+            fEventAction->UpdatePrimaryLastProcess(process->GetProcessName());
         } else {
             fEventAction->UpdatePrimaryLastProcess("Unknown");
         }
@@ -121,15 +155,7 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     if (fEventAction && isPrimary && preName == "Al2O3") {
         const G4double edep = step->GetTotalEnergyDeposit();
         if (edep > 0. && fRunAction) {
-            const G4double thickness = fRunAction->GetSampleThickness();
-            const G4double zmin = -0.5 * thickness;
-            const G4double zmax = 0.5 * thickness;
-            const G4double z = prePoint->GetPosition().z();
-            const G4double dirZ = fRunAction->GetPrimaryDirectionZ();
-            G4double depth = (dirZ >= 0.) ? (z - zmin) : (zmax - z);
-            if (depth < 0.) depth = 0.;
-            if (depth > thickness) depth = thickness;
-            const G4double depthNm = depth / nm;
+            const G4double depthNm = computeDepthNm(prePoint->GetPosition().z());
             const G4double alphaInvNm = fRunAction->GetSeyAlphaInvNm();
             auto* analysisManager = G4AnalysisManager::Instance();
             if (alphaInvNm > 0.) {
