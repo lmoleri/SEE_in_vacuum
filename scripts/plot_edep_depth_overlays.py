@@ -10,13 +10,18 @@ def _format_energy_ev(value):
 
 
 def _meta_string(value):
+    if value is None:
+        return ""
     try:
-        raw = bytes(value)
-        if raw:
-            return raw.decode(errors="ignore").rstrip("\x00").strip()
+        if isinstance(value, (bytes, bytearray)):
+            raw = bytes(value)
+        elif value.__class__.__name__ == "LowLevelView":
+            raw = bytes(value)
+        else:
+            return str(value).split("\x00", 1)[0].strip()
+        return raw.split(b"\x00", 1)[0].decode("utf-8", errors="ignore").strip()
     except Exception:
-        pass
-    return str(value).strip()
+        return str(value).split("\x00", 1)[0].strip()
 
 
 def _load_curves(results_dir, hist_name):
