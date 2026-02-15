@@ -16,6 +16,7 @@
 
 #include "DetectorConstruction.hh"
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 
@@ -104,7 +105,10 @@ RunAction::RunAction()
       fPaiEnabled(false),
       fLivermoreAtomicDeexcitation(-1),
       fSeyAlphaInvNm(0.0),
+      fPrimaryDirection(0., 0., 1.),
       fPrimaryDirectionZ(1.0),
+      fSpecularAcceptanceEnabled(false),
+      fSpecularAcceptanceHalfAngleDeg(5.0),
       fEdepPrimaryWeightedId(-1),
       fEdepDepthPrimaryId(-1),
       fEdepDepthPrimaryWeightedId(-1),
@@ -114,6 +118,7 @@ RunAction::RunAction()
       fPrimaryTrackLengthId(-1),
       fPrimaryExitClassId(-1),
       fPrimaryExitEnergyEntranceId(-1),
+      fPrimaryExitEnergyEntranceSpecularId(-1),
       fPrimaryExitEnergyOppositeId(-1),
       fPrimaryExitEnergyLateralId(-1),
       fStepLengthAl2O3Id(-1),
@@ -126,7 +131,13 @@ RunAction::RunAction()
       fEdepPrimaryExitOppositeId(-1),
       fEdepPrimaryExitLateralId(-1),
       fEventDiagnosticsNtupleId(-1),
-      fVerboseStepNtupleId(-1)
+      fVerboseStepNtupleId(-1),
+      fTrajectoryDiagnostics(false),
+      fTrajectorySamplePerClass(300),
+      fTrajectoryMaxStepsPerEvent(3000),
+      fTrajectoryDiagnosticsNtupleId(-1),
+      fTrajectoryClass2Used(0),
+      fTrajectoryClass4Used(0)
 {
 }
 
@@ -141,6 +152,8 @@ void RunAction::BeginOfRunAction(const G4Run*)
     fNEmittedElectrons = 0;
     fMinNonZeroEdep = -1.;
     fVerboseStepUsed = 0;
+    fTrajectoryClass2Used = 0;
+    fTrajectoryClass4Used = 0;
 
     auto* analysisManager = G4AnalysisManager::Instance();
 
@@ -187,6 +200,8 @@ void RunAction::BeginOfRunAction(const G4Run*)
     static G4bool histosCreated = false;
     static G4bool verboseCreated = false;
     static G4int verboseNtupleId = -1;
+    static G4bool trajectoryCreated = false;
+    static G4int trajectoryNtupleId = -1;
     if (!metaCreated) {
         analysisManager->SetFirstHistoId(0);
         analysisManager->CreateNtuple("RunMeta", "Run metadata");
@@ -205,6 +220,13 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleDColumn("sey");
         analysisManager->CreateNtupleDColumn("minNonZeroPrimaryEdepEv");
         analysisManager->CreateNtupleDColumn("maxStepNm");
+        analysisManager->CreateNtupleDColumn("primaryDirX");
+        analysisManager->CreateNtupleDColumn("primaryDirY");
+        analysisManager->CreateNtupleDColumn("primaryDirZ");
+        analysisManager->CreateNtupleDColumn("incidenceAngleSurfaceDeg");
+        analysisManager->CreateNtupleDColumn("incidenceAngleNormalDeg");
+        analysisManager->CreateNtupleIColumn("specularAcceptanceEnabled");
+        analysisManager->CreateNtupleDColumn("specularAcceptanceHalfAngleDeg");
         analysisManager->FinishNtuple();
         metaCreated = true;
     }
@@ -234,6 +256,29 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "edepFirstStepEv");
         analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "edepMaxStepEv");
         analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "depthFirstEdepNm");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "firstDirectionReversalStep");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "firstDirectionReversalDepthNm");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "firstDirectionReversalEnergyEv");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "firstBoundaryStep");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "firstBoundaryDepthNm");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "firstBoundaryEnergyEv");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "firstBoundaryType");
+        analysisManager->CreateNtupleSColumn(eventDiagNtupleId, "firstDirectionReversalProcess");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "firstDirectionReversalStepStatus");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "firstDirectionReversalStepLenNm");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "firstDirectionReversalPreEnergyEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "firstDirectionReversalPostEnergyEv");
+        analysisManager->CreateNtupleDColumn(eventDiagNtupleId, "firstDirectionReversalDeltaThetaDeg");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nStepStatusGeomBoundary");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nStepStatusPostStepProc");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nStepStatusAlongStepProc");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nStepStatusUserLimit");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nStepStatusOther");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nProcMsc");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nProcStepLimiter");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nProcTransportation");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nProcEIoni");
+        analysisManager->CreateNtupleIColumn(eventDiagNtupleId, "nProcOther");
         analysisManager->FinishNtuple(eventDiagNtupleId);
         eventDiagCreated = true;
     }
@@ -266,6 +311,40 @@ void RunAction::BeginOfRunAction(const G4Run*)
         fVerboseStepNtupleId = verboseNtupleId;
     } else {
         fVerboseStepNtupleId = -1;
+    }
+
+    if (fTrajectoryDiagnostics) {
+        if (!trajectoryCreated) {
+            trajectoryNtupleId = analysisManager->CreateNtuple(
+                "PrimaryTrajectoryDiagnostics",
+                "Sampled full step-by-step primary electron trajectories in Al2O3");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "eventId");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "sampleIndex");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "primaryExitClass");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "stepNumber");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "preDepthNm");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "postDepthNm");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "stepLenNm");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "preEnergyEv");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "postEnergyEv");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "edepEv");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "dirZPre");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "dirZPost");
+            analysisManager->CreateNtupleDColumn(trajectoryNtupleId, "deltaThetaDeg");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "reversalOnStep");
+            analysisManager->CreateNtupleSColumn(trajectoryNtupleId, "process");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "stepStatus");
+            analysisManager->CreateNtupleSColumn(trajectoryNtupleId, "preVol");
+            analysisManager->CreateNtupleSColumn(trajectoryNtupleId, "postVol");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "isBoundaryCrossing");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "isOutwardBoundary");
+            analysisManager->CreateNtupleIColumn(trajectoryNtupleId, "isFirstReversalStep");
+            analysisManager->FinishNtuple(trajectoryNtupleId);
+            trajectoryCreated = true;
+        }
+        fTrajectoryDiagnosticsNtupleId = trajectoryNtupleId;
+    } else {
+        fTrajectoryDiagnosticsNtupleId = -1;
     }
 
     if (histosCreated) {
@@ -431,6 +510,18 @@ void RunAction::BeginOfRunAction(const G4Run*)
         );
         analysisManager->SetH1XAxisTitle(fPrimaryExitEnergyEntranceId, "Exit kinetic energy (eV)");
         analysisManager->SetH1YAxisTitle(fPrimaryExitEnergyEntranceId, "Number of exits");
+
+        fPrimaryExitEnergyEntranceSpecularId = analysisManager->CreateH1(
+            "PrimaryExitEnergyEntranceSpecular",
+            "Primary e- exit kinetic energy (entrance-side, specular-cone accepted)",
+            residualBins,
+            0.,
+            maxEnergy / eV
+        );
+        analysisManager->SetH1XAxisTitle(
+            fPrimaryExitEnergyEntranceSpecularId, "Exit kinetic energy (eV)");
+        analysisManager->SetH1YAxisTitle(
+            fPrimaryExitEnergyEntranceSpecularId, "Number of accepted exits");
 
         fPrimaryExitEnergyOppositeId = analysisManager->CreateH1(
             "PrimaryExitEnergyOpposite",
@@ -752,6 +843,12 @@ void RunAction::EndOfRunAction(const G4Run* run)
     } else {
         G4cout << "  Min non-zero primary edep : none" << G4endl;
     }
+    if (fTrajectoryDiagnostics) {
+        G4cout << "  Trajectory diagnostics (sampled) class-2 opposite exits : "
+               << fTrajectoryClass2Used << " / " << fTrajectorySamplePerClass << G4endl;
+        G4cout << "  Trajectory diagnostics (sampled) class-4 trapped events : "
+               << fTrajectoryClass4Used << " / " << fTrajectorySamplePerClass << G4endl;
+    }
     G4cout << "==========================\n" << G4endl;
 
     // Write and close analysis output
@@ -777,6 +874,21 @@ void RunAction::EndOfRunAction(const G4Run* run)
         const G4double minNonZeroEdepEv = (fMinNonZeroEdep > 0.) ? (fMinNonZeroEdep / eV) : 0.0;
         analysisManager->FillNtupleDColumn(13, minNonZeroEdepEv);
         analysisManager->FillNtupleDColumn(14, fMaxStep / nm);
+        const G4ThreeVector dirUnit = (fPrimaryDirection.mag2() > 0.)
+                                          ? fPrimaryDirection.unit()
+                                          : G4ThreeVector(0., 0., 1.);
+        G4double absDz = std::abs(dirUnit.z());
+        if (absDz > 1.0) absDz = 1.0;
+        if (absDz < 0.0) absDz = 0.0;
+        const G4double incidenceSurfaceDeg = std::asin(absDz) / deg;
+        const G4double incidenceNormalDeg = 90.0 - incidenceSurfaceDeg;
+        analysisManager->FillNtupleDColumn(15, dirUnit.x());
+        analysisManager->FillNtupleDColumn(16, dirUnit.y());
+        analysisManager->FillNtupleDColumn(17, dirUnit.z());
+        analysisManager->FillNtupleDColumn(18, incidenceSurfaceDeg);
+        analysisManager->FillNtupleDColumn(19, incidenceNormalDeg);
+        analysisManager->FillNtupleIColumn(20, fSpecularAcceptanceEnabled ? 1 : 0);
+        analysisManager->FillNtupleDColumn(21, fSpecularAcceptanceHalfAngleDeg);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -892,14 +1004,58 @@ G4double RunAction::GetSeyAlphaInvNm() const
     return fSeyAlphaInvNm;
 }
 
+void RunAction::SetPrimaryDirection(const G4ThreeVector& dir)
+{
+    if (dir.mag2() <= 0.) {
+        return;
+    }
+    fPrimaryDirection = dir.unit();
+    fPrimaryDirectionZ = fPrimaryDirection.z();
+}
+
+G4ThreeVector RunAction::GetPrimaryDirection() const
+{
+    return fPrimaryDirection;
+}
+
 void RunAction::SetPrimaryDirectionZ(G4double dirZ)
 {
     fPrimaryDirectionZ = dirZ;
+    if (fPrimaryDirection.mag2() <= 0.) {
+        fPrimaryDirection = G4ThreeVector(0., 0., 1.);
+    }
+    const G4double clamped = std::max(-1.0, std::min(1.0, static_cast<double>(dirZ)));
+    if (std::abs(clamped) > 1e-12) {
+        fPrimaryDirection.setZ(clamped);
+        fPrimaryDirection = fPrimaryDirection.unit();
+    }
 }
 
 G4double RunAction::GetPrimaryDirectionZ() const
 {
     return fPrimaryDirectionZ;
+}
+
+void RunAction::SetSpecularAcceptance(G4bool enabled, G4double halfAngleDeg)
+{
+    fSpecularAcceptanceEnabled = enabled;
+    if (halfAngleDeg < 0.) {
+        halfAngleDeg = 0.;
+    }
+    if (halfAngleDeg > 180.) {
+        halfAngleDeg = 180.;
+    }
+    fSpecularAcceptanceHalfAngleDeg = halfAngleDeg;
+}
+
+G4bool RunAction::IsSpecularAcceptanceEnabled() const
+{
+    return fSpecularAcceptanceEnabled;
+}
+
+G4double RunAction::GetSpecularAcceptanceHalfAngleDeg() const
+{
+    return fSpecularAcceptanceHalfAngleDeg;
 }
 
 G4int RunAction::GetEdepPrimaryWeightedId() const
@@ -945,6 +1101,11 @@ G4int RunAction::GetPrimaryExitClassId() const
 G4int RunAction::GetPrimaryExitEnergyEntranceId() const
 {
     return fPrimaryExitEnergyEntranceId;
+}
+
+G4int RunAction::GetPrimaryExitEnergyEntranceSpecularId() const
+{
+    return fPrimaryExitEnergyEntranceSpecularId;
 }
 
 G4int RunAction::GetPrimaryExitEnergyOppositeId() const
@@ -1017,6 +1178,26 @@ G4int RunAction::GetVerboseStepNtupleId() const
     return fVerboseStepNtupleId;
 }
 
+G4bool RunAction::IsTrajectoryDiagnostics() const
+{
+    return fTrajectoryDiagnostics;
+}
+
+G4int RunAction::GetTrajectoryDiagnosticsNtupleId() const
+{
+    return fTrajectoryDiagnosticsNtupleId;
+}
+
+G4int RunAction::GetTrajectorySamplePerClass() const
+{
+    return fTrajectorySamplePerClass;
+}
+
+G4int RunAction::GetTrajectoryMaxStepsPerEvent() const
+{
+    return fTrajectoryMaxStepsPerEvent;
+}
+
 void RunAction::SetOutputTag(const G4String& tag)
 {
     fOutputTag = tag;
@@ -1071,6 +1252,25 @@ void RunAction::SetVerboseStepMaxCount(G4int maxCount)
     }
 }
 
+void RunAction::SetTrajectoryDiagnostics(G4bool enabled)
+{
+    fTrajectoryDiagnostics = enabled;
+}
+
+void RunAction::SetTrajectorySamplePerClass(G4int maxCount)
+{
+    if (maxCount > 0) {
+        fTrajectorySamplePerClass = maxCount;
+    }
+}
+
+void RunAction::SetTrajectoryMaxStepsPerEvent(G4int maxCount)
+{
+    if (maxCount > 0) {
+        fTrajectoryMaxStepsPerEvent = maxCount;
+    }
+}
+
 G4int RunAction::ConsumeVerboseStepSlot()
 {
     if (!fVerboseStepDiagnostics) {
@@ -1080,6 +1280,31 @@ G4int RunAction::ConsumeVerboseStepSlot()
         return -1;
     }
     return fVerboseStepUsed++;
+}
+
+G4bool RunAction::AcquireTrajectorySampleSlot(G4int exitClass, G4int& sampleIndex)
+{
+    sampleIndex = -1;
+    if (!fTrajectoryDiagnostics) {
+        return false;
+    }
+    if (exitClass == 2) {
+        if (fTrajectoryClass2Used >= fTrajectorySamplePerClass) {
+            return false;
+        }
+        sampleIndex = fTrajectoryClass2Used;
+        ++fTrajectoryClass2Used;
+        return true;
+    }
+    if (exitClass == 4) {
+        if (fTrajectoryClass4Used >= fTrajectorySamplePerClass) {
+            return false;
+        }
+        sampleIndex = fTrajectoryClass4Used;
+        ++fTrajectoryClass4Used;
+        return true;
+    }
+    return false;
 }
 
 void RunAction::OptimizeHistogramInFile(const G4String& fileName)

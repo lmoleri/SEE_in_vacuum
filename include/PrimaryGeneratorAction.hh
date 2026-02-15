@@ -21,7 +21,12 @@ public:
     void SetParticleName(const G4String& name);
     void SetEnergy(G4double energy) { fParticleGun->SetParticleEnergy(energy); }
     void SetPosition(G4ThreeVector pos) { fParticleGun->SetParticlePosition(pos); }
-    void SetDirection(G4ThreeVector dir) { fParticleGun->SetParticleMomentumDirection(dir); }
+    void SetDirection(G4ThreeVector dir) {
+        if (dir.mag2() <= 0.) {
+            return;
+        }
+        fParticleGun->SetParticleMomentumDirection(dir.unit());
+    }
 
 private:
     G4ParticleGun* fParticleGun;

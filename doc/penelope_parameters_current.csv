@@ -1,0 +1,27 @@
+Category,Parameter,Value,Source
+EM model,em_model,Penelope (G4EmPenelopePhysics),results/reels_reflected_5nm_sub1000nm_r100nm_particlee-_energy800eV_events10000_modelPenelope/config_step0p3nm.json; src/PhysicsList.cc
+EM global,MinEnergy,0.1 eV,src/PhysicsList.cc
+EM global,LowestElectronEnergy,0.1 eV,src/PhysicsList.cc; run_step0p3nm.log
+EM global,LowestMuHadEnergy,0.1 eV,src/PhysicsList.cc
+Deexcitation,Fluo/Auger,disabled,run_step0p3nm.log
+Deexcitation,DeexcitationIgnoreCut,false,config_step0p3nm.json; run_step0p3nm.log
+MSC,MscRangeFactor,0.08,run_step0p3nm.log
+MSC,MscGeomFactor,2.5,run_step0p3nm.log
+MSC,MscSafetyFactor,0.6,run_step0p3nm.log
+MSC,MscLambdaLimit,1 mm,run_step0p3nm.log
+MSC,MscSkin,3,run_step0p3nm.log
+Energy loss,LinearLossLimit,0.01,run_step0p3nm.log
+Production cuts,Cuts table energy range,0.1 eV -> 1e9 eV,run_step0p3nm.log; src/PhysicsList.cc::SetCuts
+Production cuts (Al2O3Region),gamma cut (range -> effective energy),1 mm -> 7068.15 eV,run_step0p3nm.log
+Production cuts (Al2O3Region),e- cut (range -> effective energy),1 mm -> 826238 eV,run_step0p3nm.log
+Production cuts (Al2O3Region),e+ cut (range -> effective energy),1 mm -> 790663 eV,run_step0p3nm.log
+Production cuts (Al2O3Region),proton cut (range -> effective energy),1 mm -> 100000 eV,run_step0p3nm.log
+Run config,primary_particle,e-,config_step0p3nm.json
+Run config,primary_energy,0.0008 MeV (800 eV),config_step0p3nm.json
+Run config,sample_thickness_nm,5,config_step0p3nm.json
+Run config,substrate_thickness_nm,1000,config_step0p3nm.json
+Run config,sample_radius_nm,100,config_step0p3nm.json
+Run config,events,10000,config_step0p3nm.json
+Run config,sey_alpha_inv_nm,0.009 1/nm,config_step0p3nm.json
+Run config,pai_enabled,false,config_step0p3nm.json
+Run config,max_step_nm (campaign values),"0.1, 0.2, 0.3, 0.4, 0.5",results/reels_reflected_.../config_step0p*nm.json

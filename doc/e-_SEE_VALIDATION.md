@@ -323,6 +323,10 @@ New event-level ntuple:
   - process labels: `firstProcessInAl2O3`, `lastProcess`
   - process-resolved energy budget: `edepByEIoniEv`, `edepByMscEv`, `edepByOtherEv`
   - first/strongest step diagnostics: `edepFirstStepEv`, `depthFirstEdepNm`, `edepMaxStepEv`
+  - transition diagnostics:
+    - `firstDirectionReversalStep`, `firstDirectionReversalDepthNm`, `firstDirectionReversalEnergyEv`
+    - `firstBoundaryStep`, `firstBoundaryDepthNm`, `firstBoundaryEnergyEv`, `firstBoundaryType`
+      (first outward crossing from Al2O3 only)
 
 Class definition:
 - `1`: entrance-side exit (backscatter-like)
@@ -333,3 +337,203 @@ Class definition:
 This split is useful to interpret `EdepPrimary` at higher energies:
 - Stopping events contribute near-full deposition (`EdepPrimary ~ E0`)
 - Opposite-side exits contribute a lower-deposition component (`EdepPrimary = E0 - E_exit`)
+
+`firstBoundaryType` encoding:
+- `1`: first crossing is `Al2O3 -> World`
+- `2`: first crossing is `World -> Al2O3`
+- `3`: first crossing is `Al2O3 -> other non-Al2O3 volume`
+- `4`: first crossing is `other non-Al2O3 volume -> Al2O3`
+
+Transition-diagnostic summary plot:
+
+```bash
+conda run -n geant4 python scripts/plot_transition_diagnostics.py \
+  --results-dir results/<your_step_scan_folder> \
+  --output-dir plots/<your_step_scan_folder> \
+  --label penelope_800eV
+```
+
+Outputs:
+- `transition_metrics_<label>.csv`
+- `transition_diagnostics_vs_step_<label>.pdf/.png`
+
+## Sampled full-trajectory diagnostics (class 2 vs class 4)
+
+To inspect the exact step history of transmitted (`class 2`) and trapped (`class 4`)
+primaries, enable sampled trajectory storage in JSON:
+
+- `trajectory_diagnostics: true`
+- `trajectory_sample_per_class: <N>` (e.g. `300`)
+- `trajectory_max_steps_per_event: <Nsteps>` (e.g. `400`)
+
+This adds ntuple `PrimaryTrajectoryDiagnostics` with one row per stored step and columns:
+
+- event/sample/class labels: `eventId`, `sampleIndex`, `primaryExitClass`, `stepNumber`
+- depth/energy evolution: `preDepthNm`, `postDepthNm`, `preEnergyEv`, `postEnergyEv`, `edepEv`, `stepLenNm`
+- angular/reversal tags: `dirZPre`, `dirZPost`, `deltaThetaDeg`, `reversalOnStep`, `isFirstReversalStep`
+- process/boundary tags: `process`, `stepStatus`, `preVol`, `postVol`, `isBoundaryCrossing`, `isOutwardBoundary`
+
+Plot sampled trajectories (depth vs energy) and first-msc-reversal markers:
+
+```bash
+conda run -n geant4 python scripts/plot_sampled_primary_trajectories.py \
+  --results-dir results/<your_step_scan_bundle> \
+  --output-dir plots/<your_step_scan_label> \
+  --label <label> \
+  --max-events-per-class 30
+```
+
+Outputs:
+- `sampled_primary_trajectories_depth_energy_<label>_step*.pdf/.png`
+- `sampled_primary_trajectories_depth_energy_<label>.root`
+
+## Angular-scattering diagnostics from sampled trajectories
+
+These diagnostics were added to answer a specific question: can a large transmitted
+fraction (`class 2`) coexist with many large-angle scatters seen in trapped events (`class 4`)?
+
+The key point is that all scattering diagnostics are evaluated **class-conditioned**
+(`class 2` vs `class 4`) using `PrimaryTrajectoryDiagnostics`.
+
+### A) Delta-theta distributions: all-steps vs msc-only
+
+```bash
+conda run -n geant4 python scripts/plot_delta_theta_diagnostics.py \
+  --results-dir results/step_convergence_5nm_sub0nm_r100nm_particlee-_energy800eV_events10000_modelPenelope_diagblock4_bundle_0p1_0p2_0p3 \
+  --output-dir plots/step_convergence_penelope_800eV_diagblock4 \
+  --label penelope_800eV_diagblock4_0p1_0p2_0p3
+```
+
+Outputs:
+- `delta_theta_all_vs_msc_class24_<label>.pdf/.png`
+- `delta_theta_threshold_event_fraction_class24_<label>.pdf/.png`
+- `delta_theta_threshold_event_fraction_class24_<label>.csv`
+- `delta_theta_diagnostics_class24_<label>.root`
+
+Interpretation:
+- The `all-process` distribution is dominated by many small-angle steps.
+- The `msc-only` distribution isolates angular kicks from multiple scattering.
+- `class 2` keeps a narrow low-angle core (transmission-like history).
+- `class 4` shows much stronger large-angle content (trapping/randomization history).
+
+### B) Event-level threshold test
+
+From the same script we compute, for thresholds
+`10/20/30/45/60/90 deg`, the fraction of sampled events with at least one step above threshold.
+
+This is useful because it tests event-level topology directly:
+- `class 2`: lower probability of large-angle kicks.
+- `class 4`: very high probability of large-angle kicks.
+
+## Correlation diagnostics (profile-based)
+
+### A) Step index vs delta-theta
+
+```bash
+conda run -n geant4 python scripts/plot_step_angle_correlation.py \
+  --results-dir results/step_convergence_5nm_sub0nm_r100nm_particlee-_energy800eV_events10000_modelPenelope_diagblock4_bundle_0p1_0p2_0p3 \
+  --output-dir plots/step_convergence_penelope_800eV_diagblock4 \
+  --label penelope_800eV_diagblock4_0p1_0p2_0p3
+```
+
+Outputs:
+- `step_index_vs_delta_theta_correlation_class24_<label>.pdf/.png/.csv/.root`
+
+### B) Current energy vs delta-theta
+
+```bash
+conda run -n geant4 python scripts/plot_energy_angle_correlation.py \
+  --results-dir results/step_convergence_5nm_sub0nm_r100nm_particlee-_energy800eV_events10000_modelPenelope_diagblock4_bundle_0p1_0p2_0p3 \
+  --output-dir plots/step_convergence_penelope_800eV_diagblock4 \
+  --label penelope_800eV_diagblock4_0p1_0p2_0p3
+```
+
+Outputs:
+- `current_energy_vs_delta_theta_correlation_class24_<label>.pdf/.png/.csv/.root`
+
+Interpretation:
+- Weak positive correlation with step index (later steps tend to be somewhat larger-angle).
+- Negative correlation with current energy (lower-energy electrons scatter to larger angles).
+
+## Correlation diagnostics (2D histograms)
+
+For direct visual inspection (without profile averaging), we also added 2D maps:
+
+```bash
+conda run -n geant4 python scripts/plot_delta_theta_2d_correlations.py \
+  --results-dir results/step_convergence_5nm_sub0nm_r100nm_particlee-_energy800eV_events10000_modelPenelope_diagblock4_bundle_0p1_0p2_0p3 \
+  --output-dir plots/step_convergence_penelope_800eV_diagblock4 \
+  --label penelope_800eV_diagblock4_0p1_0p2_0p3
+```
+
+Outputs:
+- `delta_theta_2d_vs_step_all_class24_<label>.pdf/.png`
+- `delta_theta_2d_vs_step_msc_class24_<label>.pdf/.png`
+- `delta_theta_2d_vs_energy_all_class24_<label>.pdf/.png`
+- `delta_theta_2d_vs_energy_msc_class24_<label>.pdf/.png`
+- `delta_theta_2d_correlations_class24_<label>.root`
+
+Interpretation:
+- `class 2` is concentrated at high current energy and small-to-moderate angles.
+- `class 4` spans lower energies with a broader angle distribution.
+- `msc-only` plots are the cleanest physics view for angular deflection.
+
+## Conceptual note: dE/dx intuition vs angular transport
+
+A useful distinction for thin-film electrons:
+
+- `dE/dx` intuition alone tracks mean energy loss in a continuum.
+- exit class (`class 2` transmission vs `class 4` trapping) is controlled strongly by
+  angular diffusion/randomization and boundary crossings.
+
+So two events with similar total deposited energy can still end in different classes
+because their angular histories differ.
+
+## REELS-like reflected selection (oblique incidence + specular cone)
+
+To emulate a REELS-like setup, we added:
+
+- oblique primary incidence with `incidence_angle_to_surface_deg` (or `incidence_angle_to_normal_deg`)
+- a reflected-electron acceptance cone around specular reflection:
+  - `specular_acceptance_enabled: true`
+  - `specular_acceptance_deg: 5` (half-angle)
+
+For class-1 (entrance-side) exits, the code now fills:
+
+- `PrimaryExitEnergyEntrance` (all entrance-side reflected primaries)
+- `PrimaryExitEnergyEntranceSpecular` (subset within the specular cone)
+
+### Example campaign (55 deg to surface, ±5 deg cone)
+
+```json
+{
+  "sample_thickness_nm": [5],
+  "substrate_thickness_nm": [1000],
+  "sample_radius_nm": [100],
+  "primary_energy_MeV": [0.0008],
+  "primary_particle": "e-",
+  "em_model": "Penelope",
+  "max_step_nm": 0.2,
+  "events": 10000,
+  "incidence_angle_to_surface_deg": 55,
+  "incidence_azimuth_deg": 0,
+  "primary_start_distance_nm": 20,
+  "specular_acceptance_enabled": true,
+  "specular_acceptance_deg": 5
+}
+```
+
+Run:
+
+```bash
+conda run -n geant4 ./build/SEE_in_vacuum <config.json>
+```
+
+Plot reflected spectra/fractions (auto-uses specular-selected histogram when present):
+
+```bash
+conda run -n geant4 python scripts/plot_reflected_electron_spectra.py \
+  --results-dir <results_dir> \
+  --output-dir <plots_dir> \
+  --label <label>
+```

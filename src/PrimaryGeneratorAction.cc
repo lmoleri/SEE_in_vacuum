@@ -38,6 +38,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
             fRunAction->SetPrimaryParticleName(def->GetParticleName());
         }
         const auto dir = fParticleGun->GetParticleMomentumDirection();
+        fRunAction->SetPrimaryDirection(dir);
         fRunAction->SetPrimaryDirectionZ(dir.z());
     }
     fParticleGun->GeneratePrimaryVertex(anEvent);

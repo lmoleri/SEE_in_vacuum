@@ -309,6 +309,55 @@ int main(int argc, char** argv)
         bool verboseSteps = false;
         bool verboseStepsSet = ParseBool(content, "verbose_step_diagnostics", verboseSteps);
         bool verboseStepsEnable = verboseStepsSet && verboseSteps;
+        bool trajectoryDiagnostics = false;
+        bool trajectoryDiagnosticsSet =
+            ParseBool(content, "trajectory_diagnostics", trajectoryDiagnostics);
+        if (!trajectoryDiagnosticsSet) {
+            trajectoryDiagnosticsSet =
+                ParseBool(content, "trajectory_step_diagnostics", trajectoryDiagnostics);
+        }
+        double trajectorySamplePerClass = 0.0;
+        bool trajectorySampleSet =
+            ParseNumber(content, "trajectory_sample_per_class", trajectorySamplePerClass);
+        if (!trajectorySampleSet) {
+            ParseNumber(content, "trajectory_samples_per_class", trajectorySamplePerClass);
+        }
+        double trajectoryMaxStepsPerEvent = 0.0;
+        ParseNumber(content, "trajectory_max_steps_per_event", trajectoryMaxStepsPerEvent);
+        double incidenceAngleSurfaceDeg = 0.0;
+        bool hasIncidenceSurface =
+            ParseNumber(content, "incidence_angle_surface_deg", incidenceAngleSurfaceDeg);
+        if (!hasIncidenceSurface) {
+            hasIncidenceSurface =
+                ParseNumber(content, "incidence_angle_to_surface_deg", incidenceAngleSurfaceDeg);
+        }
+        double incidenceAngleNormalDeg = 0.0;
+        bool hasIncidenceNormal =
+            ParseNumber(content, "incidence_angle_normal_deg", incidenceAngleNormalDeg);
+        if (!hasIncidenceNormal) {
+            hasIncidenceNormal =
+                ParseNumber(content, "incidence_angle_to_normal_deg", incidenceAngleNormalDeg);
+        }
+        double incidenceAzimuthDeg = 0.0;
+        ParseNumber(content, "incidence_azimuth_deg", incidenceAzimuthDeg);
+        double primaryStartDistanceNm = 20.0;
+        ParseNumber(content, "primary_start_distance_nm", primaryStartDistanceNm);
+        if (primaryStartDistanceNm <= 0.) {
+            primaryStartDistanceNm = 20.0;
+        }
+        bool specularAcceptanceEnabled = false;
+        bool specularAcceptanceEnabledSet =
+            ParseBool(content, "specular_acceptance_enabled", specularAcceptanceEnabled);
+        double specularAcceptanceDeg = 0.0;
+        bool hasSpecularAcceptance =
+            ParseNumber(content, "specular_acceptance_deg", specularAcceptanceDeg);
+        if (!hasSpecularAcceptance) {
+            hasSpecularAcceptance =
+                ParseNumber(content, "specular_acceptance_half_angle_deg", specularAcceptanceDeg);
+        }
+        if (!specularAcceptanceEnabledSet && hasSpecularAcceptance) {
+            specularAcceptanceEnabled = (specularAcceptanceDeg > 0.0);
+        }
         if (primaryParticle.empty()) {
             primaryParticle = "e-";
         }
@@ -348,6 +397,35 @@ int main(int argc, char** argv)
         primaryGenerator->SetParticleName(primaryParticle);
         runAction->SetPrimaryParticleName(primaryParticle);
         runAction->SetEmModel(emModel);
+        G4ThreeVector primaryDirection(0.0, 0.0, 1.0);
+        if (hasIncidenceNormal || hasIncidenceSurface) {
+            G4double angleToNormalDeg = 0.0;
+            if (hasIncidenceNormal) {
+                angleToNormalDeg = incidenceAngleNormalDeg;
+            } else {
+                angleToNormalDeg = 90.0 - incidenceAngleSurfaceDeg;
+            }
+            if (angleToNormalDeg < 0.0) {
+                angleToNormalDeg = 0.0;
+            }
+            if (angleToNormalDeg > 89.9) {
+                angleToNormalDeg = 89.9;
+            }
+            const G4double theta = angleToNormalDeg * deg;
+            const G4double phi = incidenceAzimuthDeg * deg;
+            primaryDirection =
+                G4ThreeVector(std::sin(theta) * std::cos(phi),
+                              std::sin(theta) * std::sin(phi),
+                              std::cos(theta));
+            if (primaryDirection.mag2() > 0.) {
+                primaryDirection = primaryDirection.unit();
+            } else {
+                primaryDirection = G4ThreeVector(0.0, 0.0, 1.0);
+            }
+        }
+        primaryGenerator->SetDirection(primaryDirection);
+        runAction->SetPrimaryDirection(primaryDirection);
+        runAction->SetSpecularAcceptance(specularAcceptanceEnabled, specularAcceptanceDeg);
         if (maxStepOverride && maxStepNm > 0.) {
             detector->SetMaxStep(maxStepNm * nm);
             runAction->SetMaxStep(maxStepNm * nm);
@@ -359,6 +437,17 @@ int main(int argc, char** argv)
             }
             if (verboseStepMax > 0.0) {
                 runAction->SetVerboseStepMaxCount(static_cast<G4int>(verboseStepMax));
+            }
+        }
+        if (trajectoryDiagnosticsSet && trajectoryDiagnostics) {
+            runAction->SetTrajectoryDiagnostics(true);
+            if (trajectorySamplePerClass > 0.0) {
+                runAction->SetTrajectorySamplePerClass(
+                    static_cast<G4int>(trajectorySamplePerClass));
+            }
+            if (trajectoryMaxStepsPerEvent > 0.0) {
+                runAction->SetTrajectoryMaxStepsPerEvent(
+                    static_cast<G4int>(trajectoryMaxStepsPerEvent));
             }
         }
         if (seyAlphaInvNm > 0.0) {
@@ -390,6 +479,16 @@ int main(int argc, char** argv)
         if (maxStepOverride && maxStepNm > 0.) {
             stepSuffix = "_step" + FormatParam(maxStepNm) + "nm";
         }
+        std::string incidenceSuffix;
+        if (hasIncidenceNormal || hasIncidenceSurface) {
+            const double absDirZ = std::min(1.0, std::max(0.0, std::abs(primaryDirection.z())));
+            const double incidenceSurfaceDegTag = std::asin(absDirZ) / deg;
+            incidenceSuffix = "_inc" + FormatParam(incidenceSurfaceDegTag) + "surf";
+        }
+        std::string specSuffix;
+        if (specularAcceptanceEnabled && specularAcceptanceDeg > 0.0) {
+            specSuffix = "_spec" + FormatParam(specularAcceptanceDeg) + "deg";
+        }
         if (outputDir.empty()) {
             std::string thickList = JoinParams(thicknessNm, "nm");
             std::string energyList = JoinParams(energiesMeV, "MeV");
@@ -397,6 +496,8 @@ int main(int argc, char** argv)
                       "_energy" + energyList +
                       substrateSuffix +
                       radiusSuffix +
+                      incidenceSuffix +
+                      specSuffix +
                       stepSuffix +
                       "_events" + FormatParam(events);
         } else if (outputDir.find("_sub") == std::string::npos) {
@@ -407,6 +508,12 @@ int main(int argc, char** argv)
         }
         if (!stepSuffix.empty() && outputDir.find(stepSuffix) == std::string::npos) {
             outputDir += stepSuffix;
+        }
+        if (!incidenceSuffix.empty() && outputDir.find("_inc") == std::string::npos) {
+            outputDir += incidenceSuffix;
+        }
+        if (!specSuffix.empty() && outputDir.find("_spec") == std::string::npos) {
+            outputDir += specSuffix;
         }
         std::filesystem::path baseDir = std::filesystem::current_path();
         if (baseDir.filename() == "build") {
@@ -435,6 +542,16 @@ int main(int argc, char** argv)
             runAction->SetSampleThickness(thickness * nm);
             runAction->SetSubstrateThickness(substrate * nm);
             runAction->SetSampleRadius(radius * nm);
+            if (hasIncidenceNormal || hasIncidenceSurface) {
+                const G4double thicknessG4 = thickness * nm;
+                const G4double zEntrance = (primaryDirection.z() >= 0.0)
+                                               ? (-0.5 * thicknessG4)
+                                               : (0.5 * thicknessG4);
+                const G4ThreeVector entrancePoint(0.0, 0.0, zEntrance);
+                const G4ThreeVector sourcePos =
+                    entrancePoint - primaryDirection * (primaryStartDistanceNm * nm);
+                primaryGenerator->SetPosition(sourcePos);
+            }
             runManager->ReinitializeGeometry(true);
             UImanager->ApplyCommand("/run/initialize");
 

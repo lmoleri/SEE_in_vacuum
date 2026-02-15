@@ -5,6 +5,9 @@
 #include "G4Event.hh"
 #include "G4SystemOfUnits.hh"
 #include "G4AnalysisManager.hh"
+#include "G4StepStatus.hh"
+
+#include <cmath>
 
 EventAction::EventAction(RunAction* runAction)
     : G4UserEventAction(),
@@ -21,6 +24,7 @@ EventAction::EventAction(RunAction* runAction)
       fHasPrimaryExitCandidate(false),
       fPrimaryExitClassCandidate(0),
       fPrimaryExitEnergyCandidate(0.),
+      fPrimaryExitDirectionCandidate(0., 0., 0.),
       fPrimaryEdepByEIoni(0.),
       fPrimaryEdepByMsc(0.),
       fPrimaryEdepByOther(0.),
@@ -32,7 +36,32 @@ EventAction::EventAction(RunAction* runAction)
       fPrimaryDirectionReversals(0),
       fLastPrimaryDirectionSign(0),
       fHasLastPrimaryDirectionSign(false),
-      fPrimaryFirstProcessInAl2O3("")
+      fPrimaryFirstProcessInAl2O3(""),
+      fHasFirstDirectionReversal(false),
+      fFirstDirectionReversalStep(-1),
+      fFirstDirectionReversalDepthNm(-1.),
+      fFirstDirectionReversalEnergy(-1.),
+      fFirstDirectionReversalProcess(""),
+      fFirstDirectionReversalStepStatus(-1),
+      fFirstDirectionReversalStepLenNm(-1.),
+      fFirstDirectionReversalPreEnergy(-1.),
+      fFirstDirectionReversalPostEnergy(-1.),
+      fFirstDirectionReversalDeltaThetaDeg(-1.),
+      fHasFirstBoundaryCrossing(false),
+      fFirstBoundaryStep(-1),
+      fFirstBoundaryDepthNm(-1.),
+      fFirstBoundaryEnergy(-1.),
+      fFirstBoundaryType(0),
+      fNStepStatusGeomBoundary(0),
+      fNStepStatusPostStepProc(0),
+      fNStepStatusAlongStepProc(0),
+      fNStepStatusUserLimit(0),
+      fNStepStatusOther(0),
+      fNProcMsc(0),
+      fNProcStepLimiter(0),
+      fNProcTransportation(0),
+      fNProcEIoni(0),
+      fNProcOther(0)
 {
 }
 
@@ -55,6 +84,7 @@ void EventAction::BeginOfEventAction(const G4Event*)
     fHasPrimaryExitCandidate = false;
     fPrimaryExitClassCandidate = 0;
     fPrimaryExitEnergyCandidate = 0.;
+    fPrimaryExitDirectionCandidate = G4ThreeVector();
     fPrimaryEdepByEIoni = 0.;
     fPrimaryEdepByMsc = 0.;
     fPrimaryEdepByOther = 0.;
@@ -67,6 +97,38 @@ void EventAction::BeginOfEventAction(const G4Event*)
     fLastPrimaryDirectionSign = 0;
     fHasLastPrimaryDirectionSign = false;
     fPrimaryFirstProcessInAl2O3 = "";
+    fHasFirstDirectionReversal = false;
+    fFirstDirectionReversalStep = -1;
+    fFirstDirectionReversalDepthNm = -1.;
+    fFirstDirectionReversalEnergy = -1.;
+    fFirstDirectionReversalProcess = "";
+    fFirstDirectionReversalStepStatus = -1;
+    fFirstDirectionReversalStepLenNm = -1.;
+    fFirstDirectionReversalPreEnergy = -1.;
+    fFirstDirectionReversalPostEnergy = -1.;
+    fFirstDirectionReversalDeltaThetaDeg = -1.;
+    fHasFirstBoundaryCrossing = false;
+    fFirstBoundaryStep = -1;
+    fFirstBoundaryDepthNm = -1.;
+    fFirstBoundaryEnergy = -1.;
+    fFirstBoundaryType = 0;
+    fNStepStatusGeomBoundary = 0;
+    fNStepStatusPostStepProc = 0;
+    fNStepStatusAlongStepProc = 0;
+    fNStepStatusUserLimit = 0;
+    fNStepStatusOther = 0;
+    fNProcMsc = 0;
+    fNProcStepLimiter = 0;
+    fNProcTransportation = 0;
+    fNProcEIoni = 0;
+    fNProcOther = 0;
+    fPrimaryTrajectorySteps.clear();
+    if (fRunAction && fRunAction->IsTrajectoryDiagnostics()) {
+        const auto reserveSize = fRunAction->GetTrajectoryMaxStepsPerEvent();
+        if (reserveSize > 0) {
+            fPrimaryTrajectorySteps.reserve(static_cast<std::size_t>(reserveSize));
+        }
+    }
 }
 
 void EventAction::EndOfEventAction(const G4Event* event)
@@ -109,6 +171,7 @@ void EventAction::EndOfEventAction(const G4Event* event)
     // Accept exits only when the final location is outside Al2O3.
     const G4int finalLocation = (fPrimaryEndLocation != 0) ? fPrimaryEndLocation : fPrimaryLastLocation;
     G4int eventExitClass = 4; // 1=entrance, 2=opposite, 3=lateral, 4=stop/no-valid-exit
+    G4bool entranceExitSpecularAccepted = false;
     if (fRunAction && fHasPrimaryExitCandidate && finalLocation != 1) {
         eventExitClass = fPrimaryExitClassCandidate;
         const G4int classId = fRunAction->GetPrimaryExitClassId();
@@ -117,8 +180,31 @@ void EventAction::EndOfEventAction(const G4Event* event)
         }
         if (fPrimaryExitEnergyCandidate > 0.) {
             if (fPrimaryExitClassCandidate == 1) {
+                entranceExitSpecularAccepted = true;
+                if (fRunAction->IsSpecularAcceptanceEnabled()) {
+                    const auto incidentDir = fRunAction->GetPrimaryDirection();
+                    if (incidentDir.mag2() > 0. && fPrimaryExitDirectionCandidate.mag2() > 0.) {
+                        const G4double sign = (incidentDir.z() >= 0.) ? -1.0 : 1.0;
+                        const G4ThreeVector normal(0., 0., sign); // outward normal of entrance side
+                        const G4ThreeVector specDir =
+                            (incidentDir - 2.0 * incidentDir.dot(normal) * normal).unit();
+                        const G4ThreeVector exitDir = fPrimaryExitDirectionCandidate.unit();
+                        G4double cosAng = specDir.dot(exitDir);
+                        if (cosAng > 1.0) cosAng = 1.0;
+                        if (cosAng < -1.0) cosAng = -1.0;
+                        const G4double angleDeg = std::acos(cosAng) / deg;
+                        entranceExitSpecularAccepted =
+                            (angleDeg <= fRunAction->GetSpecularAcceptanceHalfAngleDeg());
+                    } else {
+                        entranceExitSpecularAccepted = false;
+                    }
+                }
                 const G4int id = fRunAction->GetPrimaryExitEnergyEntranceId();
                 if (id >= 0) analysisManager->FillH1(id, fPrimaryExitEnergyCandidate / eV);
+                const G4int specId = fRunAction->GetPrimaryExitEnergyEntranceSpecularId();
+                if (entranceExitSpecularAccepted && specId >= 0) {
+                    analysisManager->FillH1(specId, fPrimaryExitEnergyCandidate / eV);
+                }
             } else if (fPrimaryExitClassCandidate == 2) {
                 const G4int id = fRunAction->GetPrimaryExitEnergyOppositeId();
                 if (id >= 0) analysisManager->FillH1(id, fPrimaryExitEnergyCandidate / eV);
@@ -218,7 +304,84 @@ void EventAction::EndOfEventAction(const G4Event* event)
         analysisManager->FillNtupleDColumn(ntupleId, 19, fPrimaryMaxStepEdep / eV);
         analysisManager->FillNtupleDColumn(ntupleId, 20,
                                            (fDepthFirstEdepNm >= 0.) ? fDepthFirstEdepNm : -1.0);
+        analysisManager->FillNtupleIColumn(ntupleId, 21, fFirstDirectionReversalStep);
+        analysisManager->FillNtupleDColumn(ntupleId, 22, fFirstDirectionReversalDepthNm);
+        analysisManager->FillNtupleDColumn(ntupleId, 23,
+                                           (fFirstDirectionReversalEnergy >= 0.)
+                                               ? (fFirstDirectionReversalEnergy / eV)
+                                               : -1.0);
+        analysisManager->FillNtupleIColumn(ntupleId, 24, fFirstBoundaryStep);
+        analysisManager->FillNtupleDColumn(ntupleId, 25, fFirstBoundaryDepthNm);
+        analysisManager->FillNtupleDColumn(ntupleId, 26,
+                                           (fFirstBoundaryEnergy >= 0.)
+                                               ? (fFirstBoundaryEnergy / eV)
+                                               : -1.0);
+        analysisManager->FillNtupleIColumn(ntupleId, 27, fFirstBoundaryType);
+        analysisManager->FillNtupleSColumn(ntupleId, 28, fFirstDirectionReversalProcess);
+        analysisManager->FillNtupleIColumn(ntupleId, 29, fFirstDirectionReversalStepStatus);
+        analysisManager->FillNtupleDColumn(ntupleId, 30, fFirstDirectionReversalStepLenNm);
+        analysisManager->FillNtupleDColumn(ntupleId, 31,
+                                           (fFirstDirectionReversalPreEnergy >= 0.)
+                                               ? (fFirstDirectionReversalPreEnergy / eV)
+                                               : -1.0);
+        analysisManager->FillNtupleDColumn(ntupleId, 32,
+                                           (fFirstDirectionReversalPostEnergy >= 0.)
+                                               ? (fFirstDirectionReversalPostEnergy / eV)
+                                               : -1.0);
+        analysisManager->FillNtupleDColumn(ntupleId, 33, fFirstDirectionReversalDeltaThetaDeg);
+        analysisManager->FillNtupleIColumn(ntupleId, 34, fNStepStatusGeomBoundary);
+        analysisManager->FillNtupleIColumn(ntupleId, 35, fNStepStatusPostStepProc);
+        analysisManager->FillNtupleIColumn(ntupleId, 36, fNStepStatusAlongStepProc);
+        analysisManager->FillNtupleIColumn(ntupleId, 37, fNStepStatusUserLimit);
+        analysisManager->FillNtupleIColumn(ntupleId, 38, fNStepStatusOther);
+        analysisManager->FillNtupleIColumn(ntupleId, 39, fNProcMsc);
+        analysisManager->FillNtupleIColumn(ntupleId, 40, fNProcStepLimiter);
+        analysisManager->FillNtupleIColumn(ntupleId, 41, fNProcTransportation);
+        analysisManager->FillNtupleIColumn(ntupleId, 42, fNProcEIoni);
+        analysisManager->FillNtupleIColumn(ntupleId, 43, fNProcOther);
         analysisManager->AddNtupleRow(ntupleId);
+    }
+
+    if (fRunAction && fRunAction->IsTrajectoryDiagnostics() &&
+        fRunAction->GetTrajectoryDiagnosticsNtupleId() >= 0 &&
+        !fPrimaryTrajectorySteps.empty()) {
+        G4int sampleIndex = -1;
+        if (fRunAction->AcquireTrajectorySampleSlot(eventExitClass, sampleIndex)) {
+            const G4int ntupleId = fRunAction->GetTrajectoryDiagnosticsNtupleId();
+            const G4int eventId = event ? event->GetEventID() : -1;
+            for (const auto& step : fPrimaryTrajectorySteps) {
+                const G4int isBoundary = (step.preVolume != step.postVolume) ? 1 : 0;
+                const G4int isOutwardBoundary =
+                    (step.preVolume == "Al2O3" && step.postVolume != "Al2O3") ? 1 : 0;
+                const G4int isFirstReversalStep =
+                    (fFirstDirectionReversalStep > 0 &&
+                     step.stepNumber == fFirstDirectionReversalStep)
+                        ? 1
+                        : 0;
+                analysisManager->FillNtupleIColumn(ntupleId, 0, eventId);
+                analysisManager->FillNtupleIColumn(ntupleId, 1, sampleIndex);
+                analysisManager->FillNtupleIColumn(ntupleId, 2, eventExitClass);
+                analysisManager->FillNtupleIColumn(ntupleId, 3, step.stepNumber);
+                analysisManager->FillNtupleDColumn(ntupleId, 4, step.preDepthNm);
+                analysisManager->FillNtupleDColumn(ntupleId, 5, step.postDepthNm);
+                analysisManager->FillNtupleDColumn(ntupleId, 6, step.stepLenNm);
+                analysisManager->FillNtupleDColumn(ntupleId, 7, step.preEnergy / eV);
+                analysisManager->FillNtupleDColumn(ntupleId, 8, step.postEnergy / eV);
+                analysisManager->FillNtupleDColumn(ntupleId, 9, step.edep / eV);
+                analysisManager->FillNtupleDColumn(ntupleId, 10, step.dirZPre);
+                analysisManager->FillNtupleDColumn(ntupleId, 11, step.dirZPost);
+                analysisManager->FillNtupleDColumn(ntupleId, 12, step.deltaThetaDeg);
+                analysisManager->FillNtupleIColumn(ntupleId, 13, step.reversalOnStep);
+                analysisManager->FillNtupleSColumn(ntupleId, 14, step.processName);
+                analysisManager->FillNtupleIColumn(ntupleId, 15, step.stepStatus);
+                analysisManager->FillNtupleSColumn(ntupleId, 16, step.preVolume);
+                analysisManager->FillNtupleSColumn(ntupleId, 17, step.postVolume);
+                analysisManager->FillNtupleIColumn(ntupleId, 18, isBoundary);
+                analysisManager->FillNtupleIColumn(ntupleId, 19, isOutwardBoundary);
+                analysisManager->FillNtupleIColumn(ntupleId, 20, isFirstReversalStep);
+                analysisManager->AddNtupleRow(ntupleId);
+            }
+        }
     }
 
     if (fRunAction && fEdepPrimary > 0.) {
@@ -294,7 +457,8 @@ void EventAction::UpdatePrimaryStopStatus(G4int status)
     fPrimaryStopStatus = status;
 }
 
-void EventAction::UpdatePrimaryExitCandidate(G4int exitClass, G4double kineticEnergy)
+void EventAction::UpdatePrimaryExitCandidate(G4int exitClass, G4double kineticEnergy,
+                                             const G4ThreeVector& exitDirection)
 {
     if (exitClass < 1 || exitClass > 3) {
         return;
@@ -302,6 +466,7 @@ void EventAction::UpdatePrimaryExitCandidate(G4int exitClass, G4double kineticEn
     fHasPrimaryExitCandidate = true;
     fPrimaryExitClassCandidate = exitClass;
     fPrimaryExitEnergyCandidate = (kineticEnergy > 0.) ? kineticEnergy : 0.;
+    fPrimaryExitDirectionCandidate = exitDirection;
 }
 
 void EventAction::AddPrimaryEdepByProcess(const G4String& processName, G4double edep, G4double depthNm)
@@ -332,12 +497,66 @@ void EventAction::UpdatePrimaryMaxDepthNm(G4double depthNm)
     }
 }
 
-void EventAction::AddPrimaryBoundaryCrossing()
+void EventAction::AddPrimaryStepAudit(const G4String& processName, G4int stepStatus)
 {
-    ++fPrimaryBoundaryCrossings;
+    switch (stepStatus) {
+        case fGeomBoundary:
+            ++fNStepStatusGeomBoundary;
+            break;
+        case fPostStepDoItProc:
+            ++fNStepStatusPostStepProc;
+            break;
+        case fAlongStepDoItProc:
+            ++fNStepStatusAlongStepProc;
+            break;
+        case fUserDefinedLimit:
+            ++fNStepStatusUserLimit;
+            break;
+        default:
+            ++fNStepStatusOther;
+            break;
+    }
+
+    if (processName == "msc") {
+        ++fNProcMsc;
+    } else if (processName == "StepLimiter") {
+        ++fNProcStepLimiter;
+    } else if (processName == "Transportation") {
+        ++fNProcTransportation;
+    } else if (processName == "eIoni") {
+        ++fNProcEIoni;
+    } else {
+        ++fNProcOther;
+    }
 }
 
-void EventAction::UpdatePrimaryDirectionSignZ(G4double dirZ)
+void EventAction::RecordPrimaryBoundaryCrossing(G4int stepNumber, G4double depthNm,
+                                                 G4double kineticEnergy, const G4String& preVolume,
+                                                 const G4String& postVolume)
+{
+    ++fPrimaryBoundaryCrossings;
+    const G4bool isOutwardFromFilm = (preVolume == "Al2O3" && postVolume != "Al2O3");
+    if (isOutwardFromFilm && !fHasFirstBoundaryCrossing) {
+        auto boundaryType = [](const G4String& preName, const G4String& postName) -> G4int {
+            if (preName == "Al2O3" && postName == "World") return 1; // out of film to world
+            if (preName == "World" && postName == "Al2O3") return 2; // back into film
+            if (preName == "Al2O3" && postName != "Al2O3") return 3; // out of film to other
+            if (preName != "Al2O3" && postName == "Al2O3") return 4; // into film from other
+            return 0;
+        };
+        fHasFirstBoundaryCrossing = true;
+        fFirstBoundaryStep = stepNumber;
+        fFirstBoundaryDepthNm = depthNm;
+        fFirstBoundaryEnergy = kineticEnergy;
+        fFirstBoundaryType = boundaryType(preVolume, postVolume);
+    }
+}
+
+void EventAction::UpdatePrimaryDirectionSignZ(G4double dirZ, G4int stepNumber, G4double depthNm,
+                                               G4double kineticEnergy, const G4String& processName,
+                                               G4int stepStatus, G4double stepLenNm,
+                                               G4double preEnergy, G4double postEnergy,
+                                               G4double deltaThetaDeg)
 {
     const G4double threshold = 1e-9;
     G4int sign = 0;
@@ -351,6 +570,18 @@ void EventAction::UpdatePrimaryDirectionSignZ(G4double dirZ)
     }
     if (fHasLastPrimaryDirectionSign && fLastPrimaryDirectionSign != sign) {
         ++fPrimaryDirectionReversals;
+        if (!fHasFirstDirectionReversal) {
+            fHasFirstDirectionReversal = true;
+            fFirstDirectionReversalStep = stepNumber;
+            fFirstDirectionReversalDepthNm = depthNm;
+            fFirstDirectionReversalEnergy = kineticEnergy;
+            fFirstDirectionReversalProcess = processName;
+            fFirstDirectionReversalStepStatus = stepStatus;
+            fFirstDirectionReversalStepLenNm = stepLenNm;
+            fFirstDirectionReversalPreEnergy = preEnergy;
+            fFirstDirectionReversalPostEnergy = postEnergy;
+            fFirstDirectionReversalDeltaThetaDeg = deltaThetaDeg;
+        }
     }
     fLastPrimaryDirectionSign = sign;
     fHasLastPrimaryDirectionSign = true;
@@ -361,4 +592,40 @@ void EventAction::UpdatePrimaryFirstProcessInAl2O3(const G4String& processName)
     if (fPrimaryFirstProcessInAl2O3.empty() && !processName.empty() && processName != "None") {
         fPrimaryFirstProcessInAl2O3 = processName;
     }
+}
+
+void EventAction::RecordPrimaryTrajectoryStep(G4int stepNumber, G4double preDepthNm,
+                                              G4double postDepthNm, G4double stepLenNm,
+                                              G4double preEnergy, G4double postEnergy,
+                                              G4double edep, G4double dirZPre, G4double dirZPost,
+                                              G4double deltaThetaDeg, G4int reversalOnStep,
+                                              const G4String& processName, G4int stepStatus,
+                                              const G4String& preVolume,
+                                              const G4String& postVolume)
+{
+    if (!fRunAction || !fRunAction->IsTrajectoryDiagnostics()) {
+        return;
+    }
+    const auto maxSteps = fRunAction->GetTrajectoryMaxStepsPerEvent();
+    if (maxSteps > 0 &&
+        static_cast<G4int>(fPrimaryTrajectorySteps.size()) >= maxSteps) {
+        return;
+    }
+    PrimaryTrajectoryStep rec;
+    rec.stepNumber = stepNumber;
+    rec.preDepthNm = preDepthNm;
+    rec.postDepthNm = postDepthNm;
+    rec.stepLenNm = stepLenNm;
+    rec.preEnergy = preEnergy;
+    rec.postEnergy = postEnergy;
+    rec.edep = edep;
+    rec.dirZPre = dirZPre;
+    rec.dirZPost = dirZPost;
+    rec.deltaThetaDeg = deltaThetaDeg;
+    rec.reversalOnStep = reversalOnStep;
+    rec.processName = processName;
+    rec.stepStatus = stepStatus;
+    rec.preVolume = preVolume;
+    rec.postVolume = postVolume;
+    fPrimaryTrajectorySteps.push_back(rec);
 }

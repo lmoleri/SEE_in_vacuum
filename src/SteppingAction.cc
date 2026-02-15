@@ -99,15 +99,48 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
             fEventAction->AddPrimaryTrackLength(stepLen);
         }
         if (particleName == "e-") {
-            const G4double depthNm = computeDepthNm(prePoint->GetPosition().z());
-            fEventAction->UpdatePrimaryMaxDepthNm(depthNm);
-            fEventAction->UpdatePrimaryMaxDepthNm(computeDepthNm(postPoint->GetPosition().z()));
-            fEventAction->UpdatePrimaryDirectionSignZ(track->GetMomentumDirection().z());
+            const G4double preDepthNm = computeDepthNm(prePoint->GetPosition().z());
+            const G4double postDepthNm = computeDepthNm(postPoint->GetPosition().z());
+            const G4double preE = prePoint->GetKineticEnergy();
+            const G4double postE = postPoint->GetKineticEnergy();
+            const G4double stepLenNm = step->GetStepLength() / nm;
+            const G4int stepStatus = static_cast<G4int>(postPoint->GetStepStatus());
+            const G4String procName = process ? process->GetProcessName() : "None";
+            const auto preDir = prePoint->GetMomentumDirection();
+            const auto postDir = postPoint->GetMomentumDirection();
+            auto signZ = [](G4double z) -> G4int {
+                const G4double threshold = 1e-9;
+                if (z > threshold) return 1;
+                if (z < -threshold) return -1;
+                return 0;
+            };
+            G4double dot = preDir.x() * postDir.x() + preDir.y() * postDir.y() + preDir.z() * postDir.z();
+            if (dot > 1.0) dot = 1.0;
+            if (dot < -1.0) dot = -1.0;
+            const G4double deltaThetaDeg = std::acos(dot) / deg;
+            const G4int reversalOnStep =
+                (signZ(preDir.z()) != 0 && signZ(postDir.z()) != 0 &&
+                 signZ(preDir.z()) != signZ(postDir.z()))
+                    ? 1
+                    : 0;
+
+            fEventAction->UpdatePrimaryMaxDepthNm(preDepthNm);
+            fEventAction->UpdatePrimaryMaxDepthNm(postDepthNm);
+            fEventAction->AddPrimaryStepAudit(procName, stepStatus);
+            fEventAction->UpdatePrimaryDirectionSignZ(track->GetMomentumDirection().z(),
+                                                      track->GetCurrentStepNumber(), preDepthNm, postE,
+                                                      procName, stepStatus, stepLenNm, preE, postE,
+                                                      deltaThetaDeg);
+            fEventAction->RecordPrimaryTrajectoryStep(track->GetCurrentStepNumber(),
+                                                      preDepthNm, postDepthNm, stepLenNm, preE,
+                                                      postE, edep, preDir.z(), postDir.z(),
+                                                      deltaThetaDeg, reversalOnStep, procName,
+                                                      stepStatus, preName, postName);
             fEventAction->UpdatePrimaryFirstProcessInAl2O3(
-                process ? process->GetProcessName() : "None");
+                procName);
             if (edep > 0.) {
                 fEventAction->AddPrimaryEdepByProcess(
-                    process ? process->GetProcessName() : "None", edep, depthNm);
+                    procName, edep, preDepthNm);
             }
         }
     }
@@ -116,7 +149,16 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         const G4bool preInAl2O3 = (preName == "Al2O3");
         const G4bool postInAl2O3 = (postName == "Al2O3");
         if (preInAl2O3 != postInAl2O3) {
-            fEventAction->AddPrimaryBoundaryCrossing();
+            G4double boundaryDepthNm = 0.0;
+            if (preInAl2O3) {
+                boundaryDepthNm = computeDepthNm(prePoint->GetPosition().z());
+            } else if (postInAl2O3) {
+                boundaryDepthNm = computeDepthNm(postPoint->GetPosition().z());
+            }
+            fEventAction->RecordPrimaryBoundaryCrossing(track->GetCurrentStepNumber(),
+                                                        boundaryDepthNm,
+                                                        postPoint->GetKineticEnergy(), preName,
+                                                        postName);
         }
     }
 
@@ -315,7 +357,8 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
 
                 // Keep only the most recent Al2O3->World crossing for this event.
                 // Final per-event filling is done in EventAction::EndOfEventAction.
-                fEventAction->UpdatePrimaryExitCandidate(exitClass, eKin);
+                fEventAction->UpdatePrimaryExitCandidate(
+                    exitClass, eKin, postPoint->GetMomentumDirection());
             }
         }
 

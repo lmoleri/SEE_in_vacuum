@@ -2,6 +2,7 @@
 #define RunAction_h 1
 
 #include "G4UserRunAction.hh"
+#include "G4ThreeVector.hh"
 #include "globals.hh"
 
 class G4Run;
@@ -33,7 +34,12 @@ public:
     void SetSampleRadius(G4double radius);
     void SetMaxStep(G4double maxStep);
     void SetSeyAlphaInvNm(G4double alphaInvNm);
+    void SetPrimaryDirection(const G4ThreeVector& dir);
+    G4ThreeVector GetPrimaryDirection() const;
     void SetPrimaryDirectionZ(G4double dirZ);
+    void SetSpecularAcceptance(G4bool enabled, G4double halfAngleDeg);
+    G4bool IsSpecularAcceptanceEnabled() const;
+    G4double GetSpecularAcceptanceHalfAngleDeg() const;
     void SetOutputTag(const G4String& tag);
     void SetPaiEnabled(G4bool enabled);
     void SetLivermoreAtomicDeexcitation(G4int value);
@@ -53,6 +59,7 @@ public:
     G4int GetPrimaryTrackLengthId() const;
     G4int GetPrimaryExitClassId() const;
     G4int GetPrimaryExitEnergyEntranceId() const;
+    G4int GetPrimaryExitEnergyEntranceSpecularId() const;
     G4int GetPrimaryExitEnergyOppositeId() const;
     G4int GetPrimaryExitEnergyLateralId() const;
     G4int GetStepLengthAl2O3Id() const;
@@ -70,10 +77,18 @@ public:
     G4bool IsVerboseStepDiagnostics() const;
     G4double GetVerboseStepThresholdFrac() const;
     G4int GetVerboseStepMaxCount() const;
+    G4bool IsTrajectoryDiagnostics() const;
+    G4int GetTrajectoryDiagnosticsNtupleId() const;
+    G4int GetTrajectorySamplePerClass() const;
+    G4int GetTrajectoryMaxStepsPerEvent() const;
     void SetVerboseStepDiagnostics(G4bool enabled);
     void SetVerboseStepThresholdFrac(G4double frac);
     void SetVerboseStepMaxCount(G4int maxCount);
+    void SetTrajectoryDiagnostics(G4bool enabled);
+    void SetTrajectorySamplePerClass(G4int maxCount);
+    void SetTrajectoryMaxStepsPerEvent(G4int maxCount);
     G4int ConsumeVerboseStepSlot();
+    G4bool AcquireTrajectorySampleSlot(G4int exitClass, G4int& sampleIndex);
 
 private:
     void OptimizeHistogramInFile(const G4String& fileName);
@@ -90,7 +105,10 @@ private:
     G4double fSampleRadius;
     G4double fMaxStep;
     G4double fSeyAlphaInvNm;
+    G4ThreeVector fPrimaryDirection;
     G4double fPrimaryDirectionZ;
+    G4bool fSpecularAcceptanceEnabled;
+    G4double fSpecularAcceptanceHalfAngleDeg;
     G4int fEdepPrimaryWeightedId;
     G4int fEdepDepthPrimaryId;
     G4int fEdepDepthPrimaryWeightedId;
@@ -100,6 +118,7 @@ private:
     G4int fPrimaryTrackLengthId;
     G4int fPrimaryExitClassId;
     G4int fPrimaryExitEnergyEntranceId;
+    G4int fPrimaryExitEnergyEntranceSpecularId;
     G4int fPrimaryExitEnergyOppositeId;
     G4int fPrimaryExitEnergyLateralId;
     G4int fStepLengthAl2O3Id;
@@ -120,6 +139,12 @@ private:
     G4double fVerboseStepThresholdFrac = 0.9;
     G4int fVerboseStepMaxCount = 1000;
     G4int fVerboseStepUsed = 0;
+    G4bool fTrajectoryDiagnostics = false;
+    G4int fTrajectorySamplePerClass = 300;
+    G4int fTrajectoryMaxStepsPerEvent = 3000;
+    G4int fTrajectoryDiagnosticsNtupleId = -1;
+    G4int fTrajectoryClass2Used = 0;
+    G4int fTrajectoryClass4Used = 0;
 };
 
 #endif

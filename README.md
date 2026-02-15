@@ -98,7 +98,7 @@ Example `config/geant4/scan.json`:
 
 If you are using Geant4 **only** to obtain energy deposition and compute secondary electrons in a custom MC:
 - **Large production cuts are desirable**. They suppress Geant4 secondaries and leave energy as local deposition, which is exactly what you want for a post‑processing SEY model.
-- **Step size still matters**. Even with large cuts, coarse stepping can smear the depth profile in a 5 nm layer. In that case, constrain the max step in Al2O3 via `max_step_nm` (we attach `G4StepLimiter` for `e-`/`e+` so the limit is enforced). See `doc/SEY_DIONNE_VALIDATION.md` for diagnostics and guidance.
+- **Step size still matters**. Even with large cuts, coarse stepping can smear the depth profile in a 5 nm layer. In that case, constrain the max step in Al2O3 via `max_step_nm` (we attach `G4StepLimiter` for `e-`/`e+` so the limit is enforced). See `doc/e-_SEE_VALIDATION.md` for diagnostics and guidance.
 
 `pai_enabled` is only used when `em_model` is `"PAI"`.
 
@@ -124,6 +124,31 @@ array must be size 1 or match the length of `sample_thickness_nm`.
 depth resolution for energy-deposition diagnostics. If omitted, the default is `0.5`
 nm. Use smaller values (e.g. `0.1`) when you want finer depth information.
 
+`incidence_angle_to_surface_deg` sets the primary incidence angle with respect to the
+surface plane (e.g. `55` for REELS-like geometry). Equivalent option:
+`incidence_angle_to_normal_deg`.
+
+`incidence_azimuth_deg` sets the azimuth of the incidence direction around the surface
+normal (default `0`).
+
+`primary_start_distance_nm` sets the source distance from the entrance surface along
+the incoming direction (default `20` nm). This keeps the impact point near the disk
+center for oblique incidence.
+
+`specular_acceptance_enabled` enables specular-cone selection for reflected primaries
+(entrance-side exits, class 1). The half-angle is set by
+`specular_acceptance_deg` (or `specular_acceptance_half_angle_deg`), e.g. `5`.
+
+`trajectory_diagnostics` enables sampled full step-by-step trajectories for the
+primary electron (stored in `PrimaryTrajectoryDiagnostics`). This is intended for
+class-conditioned transport debugging (especially class 2 vs class 4).
+
+`trajectory_sample_per_class` sets the maximum number of sampled events per class
+for trajectory storage (`2=opposite_exit`, `4=stop/no-valid-exit`).
+
+`trajectory_max_steps_per_event` caps the number of stored steps per sampled event
+to control output size.
+
 Output files are created inside `output_dir` for each combination. When `output_dir`
 is relative, it is resolved from the project root (not `build/`), e.g.:
 `results/scan_thick10-20-50nm_sub0nm_r100nm_particlee-_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_sub0nm_r100nm_particlee-_energy1MeV_events100000.root`
@@ -147,6 +172,7 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
   - `PrimaryEndVolume`: end volume category (Al2O3/World/OutOfWorld/Other)
   - `PrimaryExitClass`: event-level class for primaries exiting Al2O3 to World
   - `PrimaryExitEnergyEntrance`: primary exit kinetic energy for entrance-side exits (class 1)
+  - `PrimaryExitEnergyEntranceSpecular`: entrance-side exits accepted in the specular cone
   - `PrimaryExitEnergyOpposite`: primary exit kinetic energy for opposite-side exits (class 2)
   - `PrimaryExitEnergyLateral`: primary exit kinetic energy for lateral/edge exits (class 3)
   - `EdepPrimaryStop`: `EdepPrimary` for stop/no-valid-exit events
@@ -164,7 +190,12 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
   - `EventDiagnostics`: one row per event (primary-electron diagnostics): `EdepPrimary`,
   residual energy, exit class/energy, stop status, end volume, number of edep steps,
   track length, max depth, boundary crossings, z-direction reversals, first/last process,
-  process-resolved edep budget (`eIoni`, `msc`, `other`), first-step edep/depth, max-step edep
+  process-resolved edep budget (`eIoni`, `msc`, `other`), first-step edep/depth, max-step edep,
+  plus first-branch observables: first z-direction reversal (`step/depth/energy`) and
+  first outward boundary crossing from Al2O3 (`step/depth/energy/type`)
+  - `PrimaryTrajectoryDiagnostics`: sampled full step-by-step primary-electron
+  trajectories in Al2O3 (for selected classes), including per-step
+  depth/energy evolution, process, step status, reversal flags, and boundary flags
   - `EdepPrimaryCanvas`, `EdepInteractionsCanvas`, and other canvases saved with annotations
 
 For `PrimaryExitClass`, class codes are:
@@ -177,6 +208,12 @@ For `EventDiagnostics.primaryExitClass`, class codes are:
 - `2`: opposite-side exit
 - `3`: lateral/edge exit
 - `4`: stop/no valid exit
+
+For `EventDiagnostics.firstBoundaryType`, codes are:
+- `1`: first crossing was `Al2O3 -> World`
+- `2`: first crossing was `World -> Al2O3`
+- `3`: first crossing was `Al2O3 -> other non-Al2O3 volume`
+- `4`: first crossing was `other non-Al2O3 volume -> Al2O3`
 
 ## Plotting
 
@@ -383,5 +420,5 @@ Create a `run.mac` file to run simulations:
 - **`doc/MUON_SEY_MONTE_CARLO.md`**: Detailed documentation of the Monte Carlo physical model and implementation for muon secondary electron emission
 - **`doc/MUON_SEY_USAGE.md`**: Usage guide for the Monte Carlo SEY calculation script with examples and troubleshooting
 - **`doc/PLOT_LEGEND_EXPLANATION.md`**: Explanation of P_esc and Expected values on the SEY plot
-- **`doc/SEY_DIONNE_VALIDATION.md`**: Validation of electron SEY vs the Dionne analytic model (Fig. 9). Plots live under `plots/MC_electrons_on_shell_dionne-model/`.
+- **`doc/e-_SEE_VALIDATION.md`**: Validation of electron SEY vs the Dionne analytic model (Fig. 9). Plots live under `plots/MC_electrons_on_shell_dionne-model/`.
 - **`doc/STEP_CONVERGENCE_PROTOCOL.md`**: Objective procedure to choose `max_step_nm` (step-size convergence, acceptance criteria, and benchmark requirements).
