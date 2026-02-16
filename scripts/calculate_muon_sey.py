@@ -7,10 +7,10 @@ calculates the probability of extracting secondary electrons using a custom
 Monte Carlo method.
 
 Usage:
-    python calculate_muon_sey.py <input_root_file> [options]
+    python scripts/calculate_muon_sey.py <input_root_file> [options]
 
 Example:
-    python calculate_muon_sey.py results/scan_mu4GeV/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root
+    python scripts/calculate_muon_sey.py results/scan_mu4GeV/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root
 """
 
 import sys
@@ -875,9 +875,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example:
-  python calculate_muon_sey.py results/scan_mu4GeV/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root
-  python calculate_muon_sey.py --config config/toy_model/toy_model_config.json
-  python calculate_muon_sey.py input.root --histogram EdepPrimary --seed 12345
+  python scripts/calculate_muon_sey.py results/scan_mu4GeV/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root
+  python scripts/calculate_muon_sey.py --config config/toy_model/toy_model_config.json
+  python scripts/calculate_muon_sey.py input.root --histogram EdepPrimary --seed 12345
         """
     )
     

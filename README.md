@@ -284,17 +284,17 @@ This repository also includes a geometry-only toy model for shell crossings. It 
 
 **Run analytical scans:**
 ```bash
-conda run -n geant4 python geometry_analytical.py
+conda run -n geant4 python scripts/geometry_analytical.py
 ```
 
 **Run 2D MC scans:**
 ```bash
-conda run -n geant4 python geometry_montecarlo_2d.py --scan
+conda run -n geant4 python scripts/geometry_montecarlo_2d.py --scan
 ```
 
 **Regenerate plots without re-running MC:**
 ```bash
-conda run -n geant4 python geometry_montecarlo_2d.py --plot-only
+conda run -n geant4 python scripts/geometry_montecarlo_2d.py --plot-only
 ```
 
 **Outputs:**
@@ -318,16 +318,16 @@ For muon simulations, a custom Monte Carlo method can be applied to calculate se
 
 **Usage:**
 ```bash
-conda run -n geant4 python calculate_muon_sey.py <input_root_file> [options]
-conda run -n geant4 python calculate_muon_sey.py --config config/toy_model/toy_model_config.json [options]
+conda run -n geant4 python scripts/calculate_muon_sey.py <input_root_file> [options]
+conda run -n geant4 python scripts/calculate_muon_sey.py --config config/toy_model/toy_model_config.json [options]
 ```
 
 **Example:**
 ```bash
-conda run -n geant4 python calculate_muon_sey.py \
+conda run -n geant4 python scripts/calculate_muon_sey.py \
   results/scan_thick5nm_particlemu-_energy4GeV_events10000_modelPAI/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root \
   --bin-by-bin
-conda run -n geant4 python calculate_muon_sey.py --config config/toy_model/toy_model_config.json --bin-by-bin
+conda run -n geant4 python scripts/calculate_muon_sey.py --config config/toy_model/toy_model_config.json --bin-by-bin
 ```
 
 **Options:**
@@ -373,7 +373,7 @@ For studies where one "event" has many primary crossings of the shell: energy de
 
 **Run:**
 ```bash
-conda run -n geant4 python run_toy_events.py
+conda run -n geant4 python scripts/run_toy_events.py
 ```
 (Defaults to `config/toy_model/toy_model_config.json`; or pass a path, e.g. `config/toy_model/toy_model_config.json`.)
 

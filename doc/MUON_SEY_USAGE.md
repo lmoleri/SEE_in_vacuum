@@ -4,18 +4,18 @@
 
 ```bash
 # Basic usage with default parameters
-conda run -n geant4 python calculate_muon_sey.py <input_root_file>
+conda run -n geant4 python scripts/calculate_muon_sey.py <input_root_file>
 
 # Example with actual data
-conda run -n geant4 python calculate_muon_sey.py \
+conda run -n geant4 python scripts/calculate_muon_sey.py \
   results/scan_thick5nm_particlemu-_energy4GeV_events10000_modelPAI/SEE_in_vacuum_thick5nm_particlemu-_energy4000MeV_events10000.root
 ```
 
 ## Command Line Options
 
 ```bash
-python calculate_muon_sey.py <input_file> [options]
-python calculate_muon_sey.py --config config/toy_model/toy_model_config.json [options]
+python scripts/calculate_muon_sey.py <input_file> [options]
+python scripts/calculate_muon_sey.py --config config/toy_model/toy_model_config.json [options]
 
 Options:
   --config, -c CONFIG          Path to JSON config (provides input file, histogram, seed, epsilon, B, alpha, depth, bin_by_bin). CLI overrides config.
@@ -43,7 +43,7 @@ Samples energy deposition values from the histogram distribution. This treats th
 **Use when**: You want to use the histogram as a distribution and generate Monte Carlo samples.
 
 ```bash
-python calculate_muon_sey.py input.root
+python scripts/calculate_muon_sey.py input.root
 ```
 
 ### 2. Bin-by-Bin Processing
@@ -53,7 +53,7 @@ Processes each histogram bin as representing actual events. For each bin, proces
 **Use when**: You want to process the actual histogram data structure directly.
 
 ```bash
-python calculate_muon_sey.py input.root --bin-by-bin
+python scripts/calculate_muon_sey.py input.root --bin-by-bin
 ```
 
 ## Output Files
@@ -142,13 +142,13 @@ For a single ionization (Edep ≈ ε = 27 eV), P(≥1 SE) ≈ 32%. The theoretic
 
 ```bash
 # For a material with different escape probability
-python calculate_muon_sey.py input.root --B 0.5 --alpha 0.008
+python scripts/calculate_muon_sey.py input.root --B 0.5 --alpha 0.008
 
 # For different production depth
-python calculate_muon_sey.py input.root --depth 30  # 3.0 nm
+python scripts/calculate_muon_sey.py input.root --depth 30  # 3.0 nm
 
 # For different energy per free electron
-python calculate_muon_sey.py input.root --epsilon 25
+python scripts/calculate_muon_sey.py input.root --epsilon 25
 ```
 
 ## Validation
@@ -191,7 +191,7 @@ conda run -n geant4 root -l input.root
 
 ## Related: Toy model (multiple crossings per event)
 
-For studies where one "event" has many shell crossings, use **`run_toy_events.py`** (see README, section "Toy events"). It samples ΔE from an EdepPrimary histogram and draws SEE per crossing from Poisson(μ(ΔE)); total SE per event is the sum over crossings.
+For studies where one "event" has many shell crossings, use **`scripts/run_toy_events.py`** (see README, section "Toy events"). It samples ΔE from an EdepPrimary histogram and draws SEE per crossing from Poisson(μ(ΔE)); total SE per event is the sum over crossings.
 
 **Config:** `config/toy_model/toy_model_config.json` — keys include `crossings_per_event` (single value or list, e.g. `[100, 200]`), `n_events`, `edep_root_file`, and the same physics parameters (epsilon, B, alpha, depth).
 

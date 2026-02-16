@@ -19,17 +19,17 @@ Key fields:
 
 Analytical scans:
 ```bash
-conda run -n geant4 python geometry_analytical.py
+conda run -n geant4 python scripts/geometry_analytical.py
 ```
 
 2D MC scans:
 ```bash
-conda run -n geant4 python geometry_montecarlo_2d.py --scan
+conda run -n geant4 python scripts/geometry_montecarlo_2d.py --scan
 ```
 
 Regenerate plots from cached results (no MC run):
 ```bash
-conda run -n geant4 python geometry_montecarlo_2d.py --plot-only
+conda run -n geant4 python scripts/geometry_montecarlo_2d.py --plot-only
 ```
 
 ## Outputs

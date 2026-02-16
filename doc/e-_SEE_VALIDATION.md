@@ -116,7 +116,7 @@ To use this weighted histogram in the toy MC, pass `--histogram EdepPrimaryWeigh
 and `--depth-model weighted` (or `--weighted-edep`):
 
 ```bash
-conda run -n geant4 python calculate_muon_sey.py \
+conda run -n geant4 python scripts/calculate_muon_sey.py \
   --input-dir results/scan_dionne_validation_5nm_particlee-_energy100-1000eV_step100eV_events10000_modelPenelope \
   --histogram EdepPrimaryWeighted \
   --weighted-edep
