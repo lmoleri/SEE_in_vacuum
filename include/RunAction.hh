@@ -38,8 +38,10 @@ public:
     G4ThreeVector GetPrimaryDirection() const;
     void SetPrimaryDirectionZ(G4double dirZ);
     void SetSpecularAcceptance(G4bool enabled, G4double halfAngleDeg);
+    void SetActiveScoringMaterial(const G4String& material);
     G4bool IsSpecularAcceptanceEnabled() const;
     G4double GetSpecularAcceptanceHalfAngleDeg() const;
+    G4String GetActiveScoringMaterial() const;
     void SetOutputTag(const G4String& tag);
     void SetPaiEnabled(G4bool enabled);
     void SetLivermoreAtomicDeexcitation(G4int value);
@@ -109,6 +111,7 @@ private:
     G4double fPrimaryDirectionZ;
     G4bool fSpecularAcceptanceEnabled;
     G4double fSpecularAcceptanceHalfAngleDeg;
+    G4String fActiveScoringMaterial;
     G4int fEdepPrimaryWeightedId;
     G4int fEdepDepthPrimaryId;
     G4int fEdepDepthPrimaryWeightedId;

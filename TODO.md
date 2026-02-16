@@ -1,6 +1,8 @@
 # TODO
 
 - Validation of MC simulation for electrons on slab (reproduce existing SEE data).
+- Add true Si-only run mode: allow `sample_thickness_nm = 0` (no Al2O3 fallback) and select active scoring material (`Al2O3` or `Si`) so diagnostics/SEY work correctly on substrate-only geometry.
+- Evaluate and integrate Geant4-MicroElec extension for low-energy electron transport/energy-deposition studies relevant to SEE and REELS validation.
 - Run a thickness scan at fixed primary energy and validate transmission law from `PrimaryExitClass` (`class 2` fraction): fit `T(d) = T_inf + (T0 - T_inf) exp(-d/Lambda_eff)`, check log-linearity (`ln(T)` or `ln(T-T_inf)` vs `d`), and compare `Lambda_eff` across `max_step_nm = 0.1, 0.2, 0.3`.
 - Full MC simulation of MIP detection including electron multiplication (no backscattering; all electrons absorbed in shell; electric field histogram from Comsol; geometrical mean free path histogram).
 - Move all python scripts into a dedicated folder.

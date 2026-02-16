@@ -300,6 +300,8 @@ int main(int argc, char** argv)
         ParseNumber(content, "events", events);
         std::string outputDir = ParseString(content, "output_dir");
         std::string primaryParticle = ParseString(content, "primary_particle");
+        std::string activeScoringMaterial = ParseString(content, "active_scoring_material");
+        const bool activeScoringMaterialSet = !activeScoringMaterial.empty();
         double seyAlphaInvNm = 0.0;
         ParseNumber(content, "sey_alpha_inv_nm", seyAlphaInvNm);
         double verboseStepFrac = 0.0;
@@ -361,6 +363,19 @@ int main(int argc, char** argv)
         if (primaryParticle.empty()) {
             primaryParticle = "e-";
         }
+        if (activeScoringMaterialSet) {
+            const std::string activeScoringMaterialLower = ToLower(activeScoringMaterial);
+            if (activeScoringMaterialLower == "si") {
+                activeScoringMaterial = "Si";
+            } else if (activeScoringMaterialLower == "al2o3") {
+                activeScoringMaterial = "Al2O3";
+            }
+            if (!(activeScoringMaterial == "Al2O3" || activeScoringMaterial == "Si")) {
+                G4cerr << "Error: active_scoring_material must be 'Al2O3' or 'Si'." << G4endl;
+                delete runManager;
+                return 1;
+            }
+        }
 
         if (thicknessNm.empty() || energiesMeV.empty()) {
             G4cerr << "Error: JSON must include arrays for sample_thickness_nm and primary_energy_MeV."
@@ -397,6 +412,8 @@ int main(int argc, char** argv)
         primaryGenerator->SetParticleName(primaryParticle);
         runAction->SetPrimaryParticleName(primaryParticle);
         runAction->SetEmModel(emModel);
+        // Default before per-geometry selection in the scan loop.
+        runAction->SetActiveScoringMaterial("Al2O3");
         G4ThreeVector primaryDirection(0.0, 0.0, 1.0);
         if (hasIncidenceNormal || hasIncidenceSurface) {
             G4double angleToNormalDeg = 0.0;
@@ -489,6 +506,23 @@ int main(int argc, char** argv)
         if (specularAcceptanceEnabled && specularAcceptanceDeg > 0.0) {
             specSuffix = "_spec" + FormatParam(specularAcceptanceDeg) + "deg";
         }
+        std::string activeSuffix;
+        if (activeScoringMaterialSet && activeScoringMaterial != "Al2O3") {
+            activeSuffix = "_active" + activeScoringMaterial;
+        } else if (!activeScoringMaterialSet) {
+            bool allAutoSi = !thicknessNm.empty();
+            for (size_t idx = 0; idx < thicknessNm.size(); ++idx) {
+                const double thickness = thicknessNm[idx];
+                const double substrate = (substrateNm.size() == 1) ? substrateNm[0] : substrateNm[idx];
+                if (!(thickness <= 0.0 && substrate > 0.0)) {
+                    allAutoSi = false;
+                    break;
+                }
+            }
+            if (allAutoSi) {
+                activeSuffix = "_activeSi";
+            }
+        }
         if (outputDir.empty()) {
             std::string thickList = JoinParams(thicknessNm, "nm");
             std::string energyList = JoinParams(energiesMeV, "MeV");
@@ -496,6 +530,7 @@ int main(int argc, char** argv)
                       "_energy" + energyList +
                       substrateSuffix +
                       radiusSuffix +
+                      activeSuffix +
                       incidenceSuffix +
                       specSuffix +
                       stepSuffix +
@@ -514,6 +549,9 @@ int main(int argc, char** argv)
         }
         if (!specSuffix.empty() && outputDir.find("_spec") == std::string::npos) {
             outputDir += specSuffix;
+        }
+        if (!activeSuffix.empty() && outputDir.find("_active") == std::string::npos) {
+            outputDir += activeSuffix;
         }
         std::filesystem::path baseDir = std::filesystem::current_path();
         if (baseDir.filename() == "build") {
@@ -536,6 +574,25 @@ int main(int argc, char** argv)
             const double thickness = thicknessNm[idx];
             const double substrate = (substrateNm.size() == 1) ? substrateNm[0] : substrateNm[idx];
             const double radius = (radiusNm.size() == 1) ? radiusNm[0] : radiusNm[idx];
+            std::string effectiveActiveMaterial = activeScoringMaterial;
+            if (!activeScoringMaterialSet) {
+                effectiveActiveMaterial =
+                    (thickness <= 0.0 && substrate > 0.0) ? "Si" : "Al2O3";
+            }
+            runAction->SetActiveScoringMaterial(effectiveActiveMaterial.c_str());
+            if (effectiveActiveMaterial == "Al2O3" && thickness <= 0.0) {
+                G4cerr << "Error: active_scoring_material=Al2O3 requires sample_thickness_nm > 0."
+                       << " (or omit it and use substrate_thickness_nm>0 for automatic Si selection)"
+                       << G4endl;
+                delete runManager;
+                return 1;
+            }
+            if (effectiveActiveMaterial == "Si" && substrate <= 0.0) {
+                G4cerr << "Error: active_scoring_material=Si requires substrate_thickness_nm > 0."
+                       << G4endl;
+                delete runManager;
+                return 1;
+            }
             detector->SetSampleThickness(thickness * nm);
             detector->SetSubstrateThickness(substrate * nm);
             detector->SetSampleRadius(radius * nm);
@@ -567,6 +624,9 @@ int main(int argc, char** argv)
                                   primaryParticle + "_energy" +
                                   FormatParam(energy) + "MeV_events" +
                                   FormatParam(events);
+                if (effectiveActiveMaterial != "Al2O3") {
+                    tag += "_active" + effectiveActiveMaterial;
+                }
                 runAction->SetOutputTag(tag.c_str());
 
                 G4String runCmd = "/run/beamOn " + std::to_string(eventsInt);

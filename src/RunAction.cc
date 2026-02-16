@@ -109,6 +109,7 @@ RunAction::RunAction()
       fPrimaryDirectionZ(1.0),
       fSpecularAcceptanceEnabled(false),
       fSpecularAcceptanceHalfAngleDeg(5.0),
+      fActiveScoringMaterial("Al2O3"),
       fEdepPrimaryWeightedId(-1),
       fEdepDepthPrimaryId(-1),
       fEdepDepthPrimaryWeightedId(-1),
@@ -227,6 +228,7 @@ void RunAction::BeginOfRunAction(const G4Run*)
         analysisManager->CreateNtupleDColumn("incidenceAngleNormalDeg");
         analysisManager->CreateNtupleIColumn("specularAcceptanceEnabled");
         analysisManager->CreateNtupleDColumn("specularAcceptanceHalfAngleDeg");
+        analysisManager->CreateNtupleSColumn("activeScoringMaterial");
         analysisManager->FinishNtuple();
         metaCreated = true;
     }
@@ -889,6 +891,7 @@ void RunAction::EndOfRunAction(const G4Run* run)
         analysisManager->FillNtupleDColumn(19, incidenceNormalDeg);
         analysisManager->FillNtupleIColumn(20, fSpecularAcceptanceEnabled ? 1 : 0);
         analysisManager->FillNtupleDColumn(21, fSpecularAcceptanceHalfAngleDeg);
+        analysisManager->FillNtupleSColumn(22, fActiveScoringMaterial);
         analysisManager->AddNtupleRow();
 
         analysisManager->Write();
@@ -1048,6 +1051,19 @@ void RunAction::SetSpecularAcceptance(G4bool enabled, G4double halfAngleDeg)
     fSpecularAcceptanceHalfAngleDeg = halfAngleDeg;
 }
 
+void RunAction::SetActiveScoringMaterial(const G4String& material)
+{
+    if (material.empty()) {
+        fActiveScoringMaterial = "Al2O3";
+        return;
+    }
+    if (material == "Si") {
+        fActiveScoringMaterial = "Si";
+    } else {
+        fActiveScoringMaterial = "Al2O3";
+    }
+}
+
 G4bool RunAction::IsSpecularAcceptanceEnabled() const
 {
     return fSpecularAcceptanceEnabled;
@@ -1056,6 +1072,11 @@ G4bool RunAction::IsSpecularAcceptanceEnabled() const
 G4double RunAction::GetSpecularAcceptanceHalfAngleDeg() const
 {
     return fSpecularAcceptanceHalfAngleDeg;
+}
+
+G4String RunAction::GetActiveScoringMaterial() const
+{
+    return fActiveScoringMaterial;
 }
 
 G4int RunAction::GetEdepPrimaryWeightedId() const

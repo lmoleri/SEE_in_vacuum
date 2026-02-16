@@ -136,7 +136,7 @@ void EventAction::EndOfEventAction(const G4Event* event)
     auto* analysisManager = G4AnalysisManager::Instance();
     if (!analysisManager) return;
 
-    // Histogram ID 0: primary particle energy deposition in Al2O3
+    // Histogram ID 0: primary particle energy deposition in active scoring material
     // Convert from internal units (keV) to eV for display
     analysisManager->FillH1(0, fEdepPrimary / eV);
     if (fRunAction && fRunAction->GetEdepPrimaryWeightedId() >= 0) {
@@ -168,7 +168,7 @@ void EventAction::EndOfEventAction(const G4Event* event)
     analysisManager->FillH1(5, static_cast<G4double>(fPrimaryEndLocation));
 
     // Fill exactly one primary-exit classification per event (if any exit occurred).
-    // Accept exits only when the final location is outside Al2O3.
+    // Accept exits only when the final location is outside active scoring material.
     const G4int finalLocation = (fPrimaryEndLocation != 0) ? fPrimaryEndLocation : fPrimaryLastLocation;
     G4int eventExitClass = 4; // 1=entrance, 2=opposite, 3=lateral, 4=stop/no-valid-exit
     G4bool entranceExitSpecularAccepted = false;
@@ -349,10 +349,11 @@ void EventAction::EndOfEventAction(const G4Event* event)
         if (fRunAction->AcquireTrajectorySampleSlot(eventExitClass, sampleIndex)) {
             const G4int ntupleId = fRunAction->GetTrajectoryDiagnosticsNtupleId();
             const G4int eventId = event ? event->GetEventID() : -1;
+            const G4String activeMaterial = fRunAction->GetActiveScoringMaterial();
             for (const auto& step : fPrimaryTrajectorySteps) {
                 const G4int isBoundary = (step.preVolume != step.postVolume) ? 1 : 0;
                 const G4int isOutwardBoundary =
-                    (step.preVolume == "Al2O3" && step.postVolume != "Al2O3") ? 1 : 0;
+                    (step.preVolume == activeMaterial && step.postVolume != activeMaterial) ? 1 : 0;
                 const G4int isFirstReversalStep =
                     (fFirstDirectionReversalStep > 0 &&
                      step.stepNumber == fFirstDirectionReversalStep)
@@ -423,7 +424,8 @@ void EventAction::UpdatePrimaryEndVolume(const G4String& volumeName)
     if (fPrimaryEndLocation != 0) {
         return;
     }
-    if (volumeName == "Al2O3") {
+    const G4String activeMaterial = fRunAction ? fRunAction->GetActiveScoringMaterial() : "Al2O3";
+    if (volumeName == activeMaterial) {
         fPrimaryEndLocation = 1;
     } else if (volumeName == "World") {
         fPrimaryEndLocation = 2;
@@ -436,7 +438,8 @@ void EventAction::UpdatePrimaryEndVolume(const G4String& volumeName)
 
 void EventAction::UpdatePrimaryLastVolume(const G4String& volumeName)
 {
-    if (volumeName == "Al2O3") {
+    const G4String activeMaterial = fRunAction ? fRunAction->GetActiveScoringMaterial() : "Al2O3";
+    if (volumeName == activeMaterial) {
         fPrimaryLastLocation = 1;
     } else if (volumeName == "World") {
         fPrimaryLastLocation = 2;
@@ -535,13 +538,16 @@ void EventAction::RecordPrimaryBoundaryCrossing(G4int stepNumber, G4double depth
                                                  const G4String& postVolume)
 {
     ++fPrimaryBoundaryCrossings;
-    const G4bool isOutwardFromFilm = (preVolume == "Al2O3" && postVolume != "Al2O3");
+    const G4String activeMaterial = fRunAction ? fRunAction->GetActiveScoringMaterial() : "Al2O3";
+    const G4bool isOutwardFromFilm =
+        (preVolume == activeMaterial && postVolume != activeMaterial);
     if (isOutwardFromFilm && !fHasFirstBoundaryCrossing) {
-        auto boundaryType = [](const G4String& preName, const G4String& postName) -> G4int {
-            if (preName == "Al2O3" && postName == "World") return 1; // out of film to world
-            if (preName == "World" && postName == "Al2O3") return 2; // back into film
-            if (preName == "Al2O3" && postName != "Al2O3") return 3; // out of film to other
-            if (preName != "Al2O3" && postName == "Al2O3") return 4; // into film from other
+        auto boundaryType = [&activeMaterial](const G4String& preName,
+                                              const G4String& postName) -> G4int {
+            if (preName == activeMaterial && postName == "World") return 1; // out of layer to world
+            if (preName == "World" && postName == activeMaterial) return 2; // back into layer
+            if (preName == activeMaterial && postName != activeMaterial) return 3; // out to other
+            if (preName != activeMaterial && postName == activeMaterial) return 4; // into layer from other
             return 0;
         };
         fHasFirstBoundaryCrossing = true;

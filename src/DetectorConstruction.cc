@@ -76,6 +76,12 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
 
 G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
 {
+    // Reset geometry pointers for this construction cycle.
+    fAl2O3Logical = nullptr;
+    fAl2O3Physical = nullptr;
+    fSiLogical = nullptr;
+    fSiPhysical = nullptr;
+
     // World volume - large box
     G4double worldSize = 1.0 * m;
     G4Box* worldSolid = new G4Box("World", 
@@ -99,41 +105,43 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
         true);                      // check overlaps
 
     // Al2O3 layer - cylindrical disk
-    // Thickness and diameter are configurable (defaults: 20 nm, 200 nm)
-    G4double thickness = fSampleThickness > 0. ? fSampleThickness : 20.0 * nm;
+    // Thickness and diameter are configurable. Thickness may be zero for Si-only runs.
+    G4double thickness = (fSampleThickness >= 0.) ? fSampleThickness : 20.0 * nm;
     G4double radius = (fSampleRadius > 0.) ? fSampleRadius : 100.0 * nm;
     G4double substrateThickness = fSubstrateThickness;
 
     fSampleThickness = thickness;
     fSampleRadius = radius;
     
-    G4Tubs* al2o3Solid = new G4Tubs("Al2O3",
-                                    0.0,           // inner radius
-                                    radius,        // outer radius
-                                    0.5 * thickness,  // half-length in z
-                                    0.0,           // start angle
-                                    2.0 * M_PI);   // span angle
-    
-    fAl2O3Logical = new G4LogicalVolume(al2o3Solid,
-                                        fAl2O3Material,
-                                        "Al2O3");
+    if (thickness > 0.) {
+        G4Tubs* al2o3Solid = new G4Tubs("Al2O3",
+                                        0.0,            // inner radius
+                                        radius,         // outer radius
+                                        0.5 * thickness,  // half-length in z
+                                        0.0,            // start angle
+                                        2.0 * M_PI);    // span angle
 
-    // Constrain step length inside Al2O3 for depth-resolved energy deposition.
-    // Default is 0.5 nm unless overridden by configuration.
-    if (fMaxStep > 0.) {
-        fAl2O3Logical->SetUserLimits(new G4UserLimits(fMaxStep));
+        fAl2O3Logical = new G4LogicalVolume(al2o3Solid,
+                                            fAl2O3Material,
+                                            "Al2O3");
+
+        // Constrain step length inside Al2O3 for depth-resolved energy deposition.
+        // Default is 0.5 nm unless overridden by configuration.
+        if (fMaxStep > 0.) {
+            fAl2O3Logical->SetUserLimits(new G4UserLimits(fMaxStep));
+        }
+
+        // Position the Al2O3 layer at the origin, inside the world
+        fAl2O3Physical = new G4PVPlacement(
+            nullptr,                    // no rotation
+            G4ThreeVector(0, 0, 0),     // position
+            fAl2O3Logical,              // logical volume
+            "Al2O3",                    // name
+            fWorldLogical,              // mother volume
+            false,                      // no boolean operations
+            0,                          // copy number
+            true);                      // check overlaps
     }
-    
-    // Position the Al2O3 layer at the origin, inside the world
-    fAl2O3Physical = new G4PVPlacement(
-        nullptr,                    // no rotation
-        G4ThreeVector(0, 0, 0),     // position
-        fAl2O3Logical,              // logical volume
-        "Al2O3",                    // name
-        fWorldLogical,              // mother volume
-        false,                      // no boolean operations
-        0,                          // copy number
-        true);                      // check overlaps
 
     // Silicon substrate below the Al2O3 coating (positive z direction)
     if (fSiMaterial && substrateThickness > 0.) {
@@ -160,8 +168,8 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
             true);
     }
 
-    // Define a dedicated region for the Al2O3 target so that we can
-    // attach the PAI model only in this thin layer.
+    // Define a dedicated region for the Al2O3 target only when the film exists,
+    // so PAI remains constrained to the film in coated configurations.
     auto* regionStore = G4RegionStore::GetInstance();
     if (fAl2O3Region) {
         regionStore->DeRegister(fAl2O3Region);
@@ -172,16 +180,20 @@ G4VPhysicalVolume* DetectorConstruction::DefineVolumes()
         regionStore->DeRegister(existing);
         delete existing;
     }
-    fAl2O3Region = new G4Region("Al2O3Region");
-    fAl2O3Region->AddRootLogicalVolume(fAl2O3Logical);
+    if (fAl2O3Logical) {
+        fAl2O3Region = new G4Region("Al2O3Region");
+        fAl2O3Region->AddRootLogicalVolume(fAl2O3Logical);
+    }
 
     G4cout << "\n--- Geometry ---" << G4endl;
     G4cout << "Al2O3 layer:" << G4endl;
     G4cout << "  Thickness: " << fSampleThickness / nm << " nm" << G4endl;
     G4cout << "  Diameter: " << 2.0 * radius / nm << " nm" << G4endl;
     G4cout << "  Volume: " << M_PI * radius * radius * thickness / (nm*nm*nm) << " nm³" << G4endl;
-    if (fMaxStep > 0.) {
+    if (fAl2O3Logical && fMaxStep > 0.) {
         G4cout << "  Max step: " << fMaxStep / nm << " nm" << G4endl;
+    } else if (!fAl2O3Logical) {
+        G4cout << "  Max step: n/a (film disabled)" << G4endl;
     }
     if (fSiLogical && substrateThickness > 0.) {
         G4cout << "Si substrate:" << G4endl;
@@ -200,9 +212,8 @@ G4double DetectorConstruction::GetSampleThickness() const
 
 void DetectorConstruction::SetSampleThickness(G4double thickness)
 {
-    if (thickness > 0.) {
-        fSampleThickness = thickness;
-    }
+    if (thickness < 0.) return;
+    fSampleThickness = thickness;
 }
 
 G4double DetectorConstruction::GetSubstrateThickness() const

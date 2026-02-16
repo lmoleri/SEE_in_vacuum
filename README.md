@@ -117,6 +117,20 @@ Set this to `false` if you want large cuts to suppress deexcitation secondaries.
 Use `0` (default) for no substrate. When scanning, the array must be size 1 or match
 the length of `sample_thickness_nm`.
 
+`active_scoring_material` selects where primary-energy diagnostics and class logic are
+computed. Allowed values:
+- `"Al2O3"`: coated-layer scoring.
+- `"Si"`: use Si as active layer (useful for substrate-only validation).
+
+If `active_scoring_material` is omitted, selection is automatic per geometry point:
+- if `sample_thickness_nm <= 0` and `substrate_thickness_nm > 0`, active layer is `Si`;
+- otherwise active layer is `Al2O3`.
+
+For a true Si-only run, set:
+- `sample_thickness_nm: [0]`
+- `substrate_thickness_nm: [<positive>]`
+- optionally `active_scoring_material: "Si"` (not required with the automatic rule above)
+
 `sample_radius_nm` sets the Al2O3 disk radius (default 100 nm). When scanning, the
 array must be size 1 or match the length of `sample_thickness_nm`.
 
@@ -153,6 +167,8 @@ Output files are created inside `output_dir` for each combination. When `output_
 is relative, it is resolved from the project root (not `build/`), e.g.:
 `results/scan_thick10-20-50nm_sub0nm_r100nm_particlee-_energy0p5-1-2MeV_events100000/SEE_in_vacuum_thick20nm_sub0nm_r100nm_particlee-_energy1MeV_events100000.root`
 
+When `active_scoring_material` is `"Si"`, output folders/files include `_activeSi`.
+
 ## Outputs
 
 - `SEE_in_vacuum.root` (ROOT file with histograms and canvases)
@@ -186,13 +202,14 @@ is relative, it is resolved from the project root (not `build/`), e.g.:
   - `RunMeta`: ntuple with `primaryEnergyMeV`, `sampleThicknessNm`,
   `substrateThicknessNm`, `sampleRadiusNm`, `maxPrimaryEnergyMeV`, `paiEnabled`,
   `primaryParticle`, `emModel`, `livermoreAtomicDeexcitation`, `primaryElectrons`,
-  `secondaryElectrons`, `emittedElectrons`, `sey`, `minNonZeroPrimaryEdepEv`, and `maxStepNm`
+  `secondaryElectrons`, `emittedElectrons`, `sey`, `minNonZeroPrimaryEdepEv`, `maxStepNm`,
+  and `activeScoringMaterial`
   - `EventDiagnostics`: one row per event (primary-electron diagnostics): `EdepPrimary`,
   residual energy, exit class/energy, stop status, end volume, number of edep steps,
   track length, max depth, boundary crossings, z-direction reversals, first/last process,
   process-resolved edep budget (`eIoni`, `msc`, `other`), first-step edep/depth, max-step edep,
   plus first-branch observables: first z-direction reversal (`step/depth/energy`) and
-  first outward boundary crossing from Al2O3 (`step/depth/energy/type`)
+  first outward boundary crossing from active scoring layer (`step/depth/energy/type`)
   - `PrimaryTrajectoryDiagnostics`: sampled full step-by-step primary-electron
   trajectories in Al2O3 (for selected classes), including per-step
   depth/energy evolution, process, step status, reversal flags, and boundary flags
@@ -210,10 +227,10 @@ For `EventDiagnostics.primaryExitClass`, class codes are:
 - `4`: stop/no valid exit
 
 For `EventDiagnostics.firstBoundaryType`, codes are:
-- `1`: first crossing was `Al2O3 -> World`
-- `2`: first crossing was `World -> Al2O3`
-- `3`: first crossing was `Al2O3 -> other non-Al2O3 volume`
-- `4`: first crossing was `other non-Al2O3 volume -> Al2O3`
+- `1`: first crossing was `active_layer -> World`
+- `2`: first crossing was `World -> active_layer`
+- `3`: first crossing was `active_layer -> other non-active-layer volume`
+- `4`: first crossing was `other non-active-layer volume -> active_layer`
 
 ## Plotting
 

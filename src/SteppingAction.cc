@@ -14,6 +14,7 @@
 #include "G4AnalysisManager.hh"
 #include "G4VProcess.hh"
 #include <cmath>
+#include <utility>
 
 SteppingAction::SteppingAction(RunAction* runAction, EventAction* eventAction)
     : G4UserSteppingAction(),
@@ -42,9 +43,21 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
 
     const G4String preName  = preVol->GetName();
     const G4String postName = postVol ? postVol->GetName() : "OutOfWorld";
+    const G4String activeMaterial = fRunAction->GetActiveScoringMaterial();
 
-    // Count any energy-depositing step in Al2O3 (all particles)
-    if (fEventAction && preName == "Al2O3") {
+    const auto activeLayerBounds = [&]() -> std::pair<G4double, G4double> {
+        const G4double sampleThickness = fRunAction->GetSampleThickness();
+        const G4double substrateThickness = fRunAction->GetSubstrateThickness();
+        if (activeMaterial == "Si") {
+            const G4double zmin = 0.5 * sampleThickness;
+            const G4double zmax = zmin + substrateThickness;
+            return {zmin, zmax};
+        }
+        return {-0.5 * sampleThickness, 0.5 * sampleThickness};
+    };
+
+    // Count any energy-depositing step in active scoring material (all particles)
+    if (fEventAction && preName == activeMaterial) {
         const G4double edep = step->GetTotalEnergyDeposit();
         if (edep > 0.) {
             fEventAction->AddEdepInteraction();
@@ -55,8 +68,8 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         }
     }
 
-    // Record step length in Al2O3 for diagnostics
-    if (preName == "Al2O3") {
+    // Record step length in active scoring material for diagnostics
+    if (preName == activeMaterial) {
         const G4double stepLen = step->GetStepLength();
         if (stepLen > 0.) {
             auto* analysisManager = G4AnalysisManager::Instance();
@@ -74,12 +87,11 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     const auto* process = postPoint->GetProcessDefinedStep();
 
     const auto computeDepthNm = [&](G4double zCoord) -> G4double {
-        const G4double thickness = fRunAction->GetSampleThickness();
+        const auto [zmin, zmax] = activeLayerBounds();
+        const G4double thickness = zmax - zmin;
         if (thickness <= 0.) {
             return 0.0;
         }
-        const G4double zmin = -0.5 * thickness;
-        const G4double zmax = 0.5 * thickness;
         const G4double dirZ = fRunAction->GetPrimaryDirectionZ();
         G4double depth = (dirZ >= 0.) ? (zCoord - zmin) : (zmax - zCoord);
         if (depth < 0.) depth = 0.;
@@ -87,9 +99,8 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         return depth / nm;
     };
 
-    // Accumulate primary particle energy deposition in Al2O3 (for all primary particles)
-    // (trackID==1, parentID==0, pre-step in Al2O3)
-    if (fEventAction && isPrimary && preName == "Al2O3") {
+    // Accumulate primary particle energy deposition in active scoring material.
+    if (fEventAction && isPrimary && preName == activeMaterial) {
         const G4double edep = step->GetTotalEnergyDeposit();
         if (edep > 0.) {
             fEventAction->AddPrimaryEdep(edep);
@@ -146,13 +157,13 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
     }
 
     if (fEventAction && isPrimary && particleName == "e-") {
-        const G4bool preInAl2O3 = (preName == "Al2O3");
-        const G4bool postInAl2O3 = (postName == "Al2O3");
-        if (preInAl2O3 != postInAl2O3) {
+        const G4bool preInActive = (preName == activeMaterial);
+        const G4bool postInActive = (postName == activeMaterial);
+        if (preInActive != postInActive) {
             G4double boundaryDepthNm = 0.0;
-            if (preInAl2O3) {
+            if (preInActive) {
                 boundaryDepthNm = computeDepthNm(prePoint->GetPosition().z());
-            } else if (postInAl2O3) {
+            } else if (postInActive) {
                 boundaryDepthNm = computeDepthNm(postPoint->GetPosition().z());
             }
             fEventAction->RecordPrimaryBoundaryCrossing(track->GetCurrentStepNumber(),
@@ -192,9 +203,9 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         return;
     }
 
-    // Depth-weighted primary electron energy deposition in Al2O3.
+    // Depth-weighted primary electron energy deposition in active scoring material.
     // Use only the entrance side (direction of the primary particle).
-    if (fEventAction && isPrimary && preName == "Al2O3") {
+    if (fEventAction && isPrimary && preName == activeMaterial) {
         const G4double edep = step->GetTotalEnergyDeposit();
         if (edep > 0. && fRunAction) {
             const G4double depthNm = computeDepthNm(prePoint->GetPosition().z());
@@ -291,13 +302,12 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         }
     }
 
-    // Record primary electron track length vs depth in Al2O3 (path-length weighting).
-    if (isPrimary && preName == "Al2O3" && fRunAction) {
+    // Record primary electron track length vs depth in active scoring material.
+    if (isPrimary && preName == activeMaterial && fRunAction) {
         const G4double stepLen = step->GetStepLength();
         if (stepLen > 0.) {
-            const G4double thickness = fRunAction->GetSampleThickness();
-            const G4double zmin = -0.5 * thickness;
-            const G4double zmax = 0.5 * thickness;
+            const auto [zmin, zmax] = activeLayerBounds();
+            const G4double thickness = zmax - zmin;
             const G4double z = prePoint->GetPosition().z();
             const G4double dirZ = fRunAction->GetPrimaryDirectionZ();
             G4double depth = (dirZ >= 0.) ? (z - zmin) : (zmax - z);
@@ -314,9 +324,9 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         }
     }
 
-    // 1b) Capture per-step energy transfer in Al2O3 when PAI is enabled.
+    // 1b) Capture per-step energy transfer in active scoring material when PAI is enabled.
     //     Use energy deposition on electron steps as proxy for microscopic transfers.
-    if (preName == "Al2O3" && fRunAction && fRunAction->IsPaiEnabled()) {
+    if (preName == activeMaterial && fRunAction && fRunAction->IsPaiEnabled()) {
         const G4double edep = step->GetTotalEnergyDeposit();
         if (edep > 0.) {
             auto* analysisManager = G4AnalysisManager::Instance();
@@ -326,9 +336,9 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         }
     }
 
-    // 2) Count electrons that EXIT the Al2O3 layer into vacuum (world).
+    // 2) Count electrons that EXIT the active scoring layer into vacuum (world).
     //    Track both total emitted electrons (including primaries) and true secondaries.
-    if (preName == "Al2O3" && postName == "World") {
+    if (preName == activeMaterial && postName == "World") {
         const G4int parentId = track->GetParentID();
         // Apply a small kinetic energy threshold to avoid counting
         // essentially "stopped" electrons as emitted.
@@ -339,8 +349,13 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
         if (isPrimary && particleName == "e-") {
             if (fEventAction && fRunAction) {
                 const G4double thickness = fRunAction->GetSampleThickness();
-                const G4double zMin = -0.5 * thickness;
-                const G4double zMax = 0.5 * thickness;
+                const G4double substrateThickness = fRunAction->GetSubstrateThickness();
+                G4double zMin = -0.5 * thickness;
+                G4double zMax = 0.5 * thickness;
+                if (activeMaterial == "Si") {
+                    zMin = 0.5 * thickness;
+                    zMax = zMin + substrateThickness;
+                }
                 const G4double zExit = postPoint->GetPosition().z();
                 const G4double tol = 0.2 * nm;
                 const G4bool nearMin = (std::abs(zExit - zMin) <= tol);
@@ -355,7 +370,7 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
                     exitClass = entranceExit ? 1 : 2;
                 }
 
-                // Keep only the most recent Al2O3->World crossing for this event.
+                // Keep only the most recent active-layer->World crossing for this event.
                 // Final per-event filling is done in EventAction::EndOfEventAction.
                 fEventAction->UpdatePrimaryExitCandidate(
                     exitClass, eKin, postPoint->GetMomentumDirection());
