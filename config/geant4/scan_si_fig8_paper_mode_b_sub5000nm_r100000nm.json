@@ -1,0 +1,57 @@
+{
+  "sample_thickness_nm": [
+    0
+  ],
+  "substrate_thickness_nm": [
+    5000
+  ],
+  "sample_radius_nm": [
+    100000
+  ],
+  "world_material": "Vacuum",
+  "active_scoring_material": "Si",
+  "incidence_angle_normal_deg": 0.0,
+  "primary_energy_MeV": [
+    2e-05,
+    3e-05,
+    4e-05,
+    5e-05,
+    6e-05,
+    8e-05,
+    0.0001,
+    0.00012,
+    0.00015,
+    0.00018,
+    0.0002,
+    0.00025,
+    0.0003,
+    0.00035,
+    0.0004,
+    0.00045,
+    0.0005,
+    0.0006,
+    0.0007,
+    0.0008,
+    0.0009,
+    0.001,
+    0.0012,
+    0.0014,
+    0.0016
+  ],
+  "em_model": "MicroElecFig8Ref",
+  "primary_particle": "e-",
+  "events": 10000,
+  "microelec_mode": "b",
+  "microelec_disable_initial_energy": true,
+  "microelec_surface_enabled": true,
+  "microelec_reference_profile": true,
+  "microelec_fig8_strict_mode": true,
+  "microelec_regime": "sey_benchmark",
+  "sey_benchmark_world_cut_nm": 1000000.0,
+  "sey_benchmark_target_cut_nm": 1.0,
+  "disable_deexcitation": false,
+  "deexcitation_ignore_cut": false,
+  "microelec_lo_phonon_enabled": false,
+  "microelec_capture_enabled": false,
+  "output_dir": "results/scan_si_fig8_paper_modeb_sub5000nm_r100000nm_particlee-_energy20-1600eV_events10000_refprofile_strict"
+}
